@@ -14,48 +14,87 @@ It is *reference material only* — useful for the working auth middleware, the
 Jikan image-fetch logic, and the `user_preferences` schema spine. **Do not
 import wholesale.**
 
-## Current state (last updated 2026-06-08)
+## Current state (last updated 2026-06-09)
 
-**Scaffold is up.** `npm run dev` boots a working Express+EJS server with compiled Tailwind. Smoke-test page at `/` renders sakura-red text confirming Tailwind is wired.
+**Scaffold + database are live.** Express+EJS+Tailwind boots cleanly; the 15-table SQLite schema is on disk and the single connection point (`src/db.js`) loads `sqlite-vec` automatically.
+
+**Repository:** https://github.com/abhiijay/OtakuGuide (public, branch `main`, initial commit pushed).
 
 Files on disk:
 - `README.md`, `CLAUDE.md` — documentation
-- `package.json` — deps: express, ejs, dotenv (prod) + tailwindcss, nodemon, concurrently (dev). Six npm scripts.
+- `package.json` — deps: express, ejs, dotenv, **better-sqlite3, sqlite-vec** (prod) + tailwindcss, nodemon, concurrently (dev). Seven npm scripts.
 - `.env.example`, `.gitignore`
-- `server.js` — 25 lines, boots Express, serves static files, renders `home.ejs` at `/`
+- `server.js` — boots Express, serves static files, renders `home.ejs` at `/`
 - `tailwind.config.js` — defines `sakura` (`#DC143C`), `ink`, `paper` colors + Shippori Mincho font stack
 - `styles/input.css` — 3-line Tailwind source
 - `views/home.ejs` — smoke-test page
-- `public/css/styles.css` — compiled Tailwind output (5.4KB)
+- `public/css/styles.css` — compiled Tailwind output (gitignored)
+- **`db/schema.sql`** — all 15 tables, 103 columns, fully commented; 5 groups (auth / catalog / lookups+joins / relationships / user behavior)
+- **`db/otakuguide.sqlite`** — initialized empty database file (gitignored)
+- **`scripts/init-db.js`** — runs `schema.sql` against `db/otakuguide.sqlite` (idempotent)
+- **`src/db.js`** — single SQLite connection; `foreign_keys=ON`, `journal_mode=WAL`, `sqlite-vec` loaded
 
-No database yet, no auth, no API routes, no real views. Just the bones.
+No auth, no API routes, no real views, no anime data yet. Schema is ready to be filled.
 
-## Where we left off (2026-06-07 night)
+## Where we left off (2026-06-09 night)
 
-Cross-checked the full database schema against every commitment we made — all 12 signals, 9 theory features, data-resilience plan, auth plan, and aesthetic decisions. Identified three corrections to the original 16-table proposal:
+Schema phase **complete**. All 15 tables written, validated (CHECK constraints fire correctly, FK cascades work end-to-end), initialized on disk, and pushed to GitHub.
 
-1. Add `users.onboarding_completed_at` (cold-start support)
-2. Add `anime.collab_vec` BLOB (SVD-derived item latent factor)
-3. Rename `user_taste_vector` → `user_vectors`, add `collab_vec` (SVD-derived user latent factor)
+Decisions closed today:
+- **`users.show_adult`** — no column. Adult content (AniList `isAdult` flag, hentai only) is filtered globally at the query layer in `src/db.js`. Gore/violence anime (Dorohedoro, Chainsaw Man, Berserk, Devilman Crybaby) all stay — they're NOT flagged as adult.
+- **`mean_score` → `average_score`** — switched to AniList's weighted score (better for ranking; small-sample anime don't get artificial boosts).
+- **`country_of_origin`** — not stored as a column. v1 filters to Japan-only at **import time**. When we later expand to donghua (Solo Leveling, Throne of Seal, Renegade Immortal) and Korean aeni, we'll add the column then.
+- **Borderline columns** — kept `duration_minutes` and `season` (useful filters), kept `notes`/`started_at`/`finished_at` on `user_anime` (standard tracker fields), dropped `favorites`.
+- **No `system_metadata` table** — for v1, hardcode model version as a constant; add a real ops table later.
+- **`updated_at` exception on `user_anime`** — it gets mutated constantly, sorting "recently updated" is a v1 feature, writes will be centralized through a helper in `src/db.js`.
 
-**Final table count: 15** (dropped sessions — letting the session-store library manage its own table).
+Tables (final): users, external_accounts, anime, genres, tags, studios, characters, anime_genres, anime_tags, anime_studios, anime_characters, relations, community_recommendations, user_anime, user_vectors.
 
-Tables grouped:
-- Auth (2): `users`, `external_accounts`
-- Catalog spine (1): `anime` (with 5 BLOB vec columns: synopsis_vec, tag_vec, character_vec, review_vec, collab_vec)
-- Lookups (4): `genres`, `tags`, `studios`, `characters`
-- Joins (4): `anime_genres`, `anime_tags`, `anime_studios`, `anime_characters`
-- Relationships (2): `relations`, `community_recommendations`
-- User tracking (2): `user_anime`, `user_vectors`
-
-~~Open question we didn't answer: do we want `users.show_adult` column in v1?~~ **Decided 2026-06-08: no column, filter all adult titles at the query layer.** AniList's `isAdult` flag marks explicit sexual content only (hentai), not gore or violence — so legitimate dark seinen (Dorohedoro, Chainsaw Man, Berserk, Devilman Crybaby) is unaffected. Centralize the filter in `src/db.js` so we can't forget a `WHERE` clause.
+Captured feature idea: **character search** ("search Sasuke → show Naruto") works on the existing schema with zero changes — `WHERE c.name LIKE '?' JOIN anime_characters JOIN anime`, ordered by role rank (MAIN > SUPPORTING > BACKGROUND). Will be wired up when we build the search endpoint.
 
 ## Next move
 
-1. Install `better-sqlite3` and `sqlite-vec`
-2. Write `db/schema.sql` with 15 tables, every column commented
-3. Write `scripts/init-db.js` and `src/db.js` (with the adult filter centralized here)
-4. Run `npm run init-db`, verify all 15 tables exist via `sqlite3 db/otakuguide.sqlite ".schema"`
+The build order from the locked plan:
+1. **`src/anilist.js`** — GraphQL client (rate limiting, retries; ~100 lines)
+2. **`src/embeddings.js`** — `@xenova/transformers` wrapper (~40 lines)
+3. **`scripts/import-anime.js`** — orchestrator that pulls AniList + fills all 15 tables + generates embeddings (~250 lines)
+4. **Run the import** — 4-8 hours of compute, mostly idle on AniList's 90-req/min rate limit; runs unattended overnight
+5. Then: `src/recommender.js`, then auth, then routes, then views
+
+Step 1 is the next coding step. No intermediate steps between schema-on-disk and `src/anilist.js`.
+
+## Tomorrow's session plan (2026-06-10) — fill the catalog
+
+**Primary goal: get every anime into the database.**
+
+Pick a scope based on energy / time available:
+
+**Minimum (1-2 hours of focused work):**
+- [ ] Re-read this file, especially "Where we left off (2026-06-09 night)" and the signal inventory.
+- [ ] Confirm or pin the **AniList GraphQL query shape** — what fields per anime, how many at a time (probably 50/page), what relations + tags + characters depth.
+- [ ] Write `src/anilist.js`:
+   - one helper `fetchAnimePage(page)` that returns 50 anime with all the fields we need in one GraphQL call
+   - 90-req/min rate limiter (sleep between calls)
+   - retry-with-backoff for HTTP 429 / 500
+   - filter to `countryOfOrigin = JP` at query time (donghua/aeni come later)
+- [ ] Smoke-test by fetching page 1 and printing the first anime's title + tags.
+
+**Recommended (3-4 hours):**
+- [ ] All of the above, plus:
+- [ ] Write `src/embeddings.js` — wraps `Xenova/all-MiniLM-L6-v2`, takes a string, returns a 1536-byte Float32 BLOB. First call downloads the ~80 MB model.
+- [ ] Smoke-test by embedding one synopsis and confirming the buffer is exactly 1536 bytes (matches the CHECK constraint).
+
+**Stretch (5+ hours + overnight import):**
+- [ ] All of the above, plus:
+- [ ] Write `scripts/import-anime.js`:
+   - Paginates AniList; inserts into `anime`, `genres`, `tags`, `studios`, `characters` and the four join tables.
+   - Resumable: writes a checkpoint file (`db/import-progress.json`) tracking last imported page, so a crash doesn't restart from page 1.
+   - Two-phase: first pass fills metadata; second pass fills embedding BLOBs (so you can interrupt mid-embed without losing catalog data).
+- [ ] Kick off the import before bed; wake up to a populated database.
+
+**If you finish all that and want bonus work:** start sketching `src/recommender.js` — the cosine-similarity query against `anime.synopsis_vec` is the simplest first cut and a good way to verify the embeddings landed correctly.
+
+**Don't do tomorrow:** auth, OAuth, routes, views. The build order is data-first; UI work is later.
 
 ## When picking back up — concrete next step
 
@@ -64,8 +103,9 @@ If you're returning after time away, do this in order:
 1. **Re-read this whole file.** Skim the README too. Do not try to remember decisions from memory.
 2. **Confirm or revise the open decisions** in the "Open decisions" section below. Anything that has changed in your thinking, update here first.
 3. ~~First code to write is the file scaffold.~~ **Done 2026-06-07.** Scaffold exists, `npm run dev` boots cleanly.
-4. **Next up: the database.** Write `db/schema.sql` with the 15 tables described in "Where we left off." Then `scripts/init-db.js` to execute it, then `src/db.js` to open the database and load `sqlite-vec`. Run `npm run init-db`.
-5. **After that, in order:** AniList GraphQL client (`src/anilist.js`) → catalog import script → embedding pipeline → recommender engine → auth → AniList OAuth flow → JSON API → views. Don't reorder.
+4. ~~Next up: the database.~~ **Done 2026-06-09.** Schema written, validated, on disk; `src/db.js` opens it with `sqlite-vec` loaded.
+5. **Next up: AniList client + catalog import** (see "Next move" above).
+6. **After that, in order:** embedding pipeline → recommender engine → auth → AniList OAuth flow → JSON API → views. Don't reorder.
 
 ## Decisions log (with reasoning)
 
