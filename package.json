@@ -1,0 +1,31 @@
+{
+  "name": "otakuguide",
+  "version": "0.1.0",
+  "description": "A minimalist anime tracker and recommender with embedding-based similarity",
+  "private": true,
+  "license": "MIT",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "npm run build:css && node server.js",
+    "dev": "concurrently --names \"server,tailwind\" --prefix-colors \"red,gray\" \"npm:dev:server\" \"npm:dev:css\"",
+    "dev:server": "nodemon server.js",
+    "dev:css": "tailwindcss -i ./styles/input.css -o ./public/css/styles.css --watch",
+    "build:css": "tailwindcss -i ./styles/input.css -o ./public/css/styles.css --minify",
+    "init-db": "node scripts/init-db.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.19.2",
+    "sqlite-vec": "^0.1.9"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.4",
+    "tailwindcss": "^3.4.10"
+  }
+}
