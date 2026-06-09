@@ -17,6 +17,9 @@ db/*.sqlite-shm
 db/skip_ids.json
 db/import-progress.json
 
+# offline-database snapshot — re-downloaded by src/offline-db.js as needed (~58 MB)
+db/anime-offline-database.json
+
 # Logs
 logs/
 *.log
