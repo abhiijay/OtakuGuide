@@ -14,11 +14,11 @@ It is *reference material only* — useful for the working auth middleware, the
 Jikan image-fetch logic, and the `user_preferences` schema spine. **Do not
 import wholesale.**
 
-## Current state (last updated 2026-06-09)
+## Current state (last updated 2026-06-10)
 
-**Scaffold + database are live.** Express+EJS+Tailwind boots cleanly; the 15-table SQLite schema is on disk and the single connection point (`src/db.js`) loads `sqlite-vec` automatically.
+**Scaffold + database + AniList client are live.** Express+EJS+Tailwind boots cleanly; the 15-table SQLite schema is on disk; `src/anilist.js` enumerates the AniList catalog via ID batching.
 
-**Repository:** https://github.com/abhiijay/OtakuGuide (public, branch `main`, initial commit pushed).
+**Repository:** https://github.com/abhiijay/OtakuGuide (public, branch `main`).
 
 Files on disk:
 - `README.md`, `CLAUDE.md` — documentation
@@ -29,14 +29,26 @@ Files on disk:
 - `styles/input.css` — 3-line Tailwind source
 - `views/home.ejs` — smoke-test page
 - `public/css/styles.css` — compiled Tailwind output (gitignored)
-- **`db/schema.sql`** — all 15 tables, 103 columns, fully commented; 5 groups (auth / catalog / lookups+joins / relationships / user behavior)
-- **`db/otakuguide.sqlite`** — initialized empty database file (gitignored)
-- **`scripts/init-db.js`** — runs `schema.sql` against `db/otakuguide.sqlite` (idempotent)
-- **`src/db.js`** — single SQLite connection; `foreign_keys=ON`, `journal_mode=WAL`, `sqlite-vec` loaded
+- `db/schema.sql` — all 15 tables, 103 columns, fully commented; 5 groups (auth / catalog / lookups+joins / relationships / user behavior)
+- `db/otakuguide.sqlite` — initialized empty database file (gitignored)
+- `scripts/init-db.js` — runs `schema.sql` against `db/otakuguide.sqlite` (idempotent)
+- `src/db.js` — single SQLite connection; `foreign_keys=ON`, `journal_mode=WAL`, `sqlite-vec` loaded
+- **`src/anilist.js`** — AniList GraphQL client. Exports `fetchHighestAnimeId()` and `fetchAnimeBatchByIds(ids)`. ID-enumeration strategy (not Page-based). 2200ms rate limiter. Smoke test included (`node src/anilist.js`).
 
-No auth, no API routes, no real views, no anime data yet. Schema is ready to be filled.
+No auth, no API routes, no real views, no anime data yet. Catalog import is the next step.
 
-## Where we left off (2026-06-09 night)
+## Where we left off (2026-06-10)
+
+**AniList client done.** `src/anilist.js` enumerates the catalog via ID batching, not Page-based pagination — see decision log below for why. Smoke test passes: Cowboy Bebop at id 1, highest id 213,068, 100% field coverage on every signal column for real anime.
+
+**Numbers from the smoke test:**
+- Highest AniList anime id: **213,068**
+- ID batches at 50 per request: **~4,262 requests** to cover the full ID space
+- At ~27 req/min (degraded rate limit): **~158 min (~2.6 hours)** of pure API time
+- Hit rate is low in mid-range (a 100k-slice returned 3/50) — most IDs are manga, non-JP, deleted, or adult. The actual Japanese-anime catalog will be in the tens of thousands, not 213k.
+- Field coverage on real anime: **100% on every critical column**. Minor expected nulls: 88% English title (some have none), 91% banner image (some lack banner), 97% episodes (ongoing series), 97% relations/recommendations (standalone niche titles).
+
+## Earlier — schema phase (2026-06-09)
 
 Schema phase **complete**. All 15 tables written, validated (CHECK constraints fire correctly, FK cascades work end-to-end), initialized on disk, and pushed to GitHub.
 
@@ -54,47 +66,14 @@ Captured feature idea: **character search** ("search Sasuke → show Naruto") wo
 
 ## Next move
 
-The build order from the locked plan:
-1. **`src/anilist.js`** — GraphQL client (rate limiting, retries; ~100 lines)
+Build order from here:
+1. ~~`src/anilist.js`~~ **Done 2026-06-10.** ID-enumeration via `id_in` batches, 27 req/min throttle, retries on 429/5xx. See decision-log entries "AniList catalog enumeration" and "AniList rate limit."
 2. **`src/embeddings.js`** — `@xenova/transformers` wrapper (~40 lines)
-3. **`scripts/import-anime.js`** — orchestrator that pulls AniList + fills all 15 tables + generates embeddings (~250 lines)
-4. **Run the import** — 4-8 hours of compute, mostly idle on AniList's 90-req/min rate limit; runs unattended overnight
-5. Then: `src/recommender.js`, then auth, then routes, then views
+3. **`scripts/import-anime.js`** — orchestrator: walk 1..213,068 in 50-ID batches → fills all 15 tables → generates embeddings. Resumable via `skip_ids.json` + `last_id_processed` checkpoint. Two-phase: metadata first, embeddings second. ~158 min API time + several hours of CPU-bound embeddings.
+4. **Run the import** — kick off, walk away. Wake to a populated database.
+5. Then: `src/recommender.js`, then auth, then routes, then views.
 
-Step 1 is the next coding step. No intermediate steps between schema-on-disk and `src/anilist.js`.
-
-## Tomorrow's session plan (2026-06-10) — fill the catalog
-
-**Primary goal: get every anime into the database.**
-
-Pick a scope based on energy / time available:
-
-**Minimum (1-2 hours of focused work):**
-- [ ] Re-read this file, especially "Where we left off (2026-06-09 night)" and the signal inventory.
-- [ ] Confirm or pin the **AniList GraphQL query shape** — what fields per anime, how many at a time (probably 50/page), what relations + tags + characters depth.
-- [ ] Write `src/anilist.js`:
-   - one helper `fetchAnimePage(page)` that returns 50 anime with all the fields we need in one GraphQL call
-   - 90-req/min rate limiter (sleep between calls)
-   - retry-with-backoff for HTTP 429 / 500
-   - filter to `countryOfOrigin = JP` at query time (donghua/aeni come later)
-- [ ] Smoke-test by fetching page 1 and printing the first anime's title + tags.
-
-**Recommended (3-4 hours):**
-- [ ] All of the above, plus:
-- [ ] Write `src/embeddings.js` — wraps `Xenova/all-MiniLM-L6-v2`, takes a string, returns a 1536-byte Float32 BLOB. First call downloads the ~80 MB model.
-- [ ] Smoke-test by embedding one synopsis and confirming the buffer is exactly 1536 bytes (matches the CHECK constraint).
-
-**Stretch (5+ hours + overnight import):**
-- [ ] All of the above, plus:
-- [ ] Write `scripts/import-anime.js`:
-   - Paginates AniList; inserts into `anime`, `genres`, `tags`, `studios`, `characters` and the four join tables.
-   - Resumable: writes a checkpoint file (`db/import-progress.json`) tracking last imported page, so a crash doesn't restart from page 1.
-   - Two-phase: first pass fills metadata; second pass fills embedding BLOBs (so you can interrupt mid-embed without losing catalog data).
-- [ ] Kick off the import before bed; wake up to a populated database.
-
-**If you finish all that and want bonus work:** start sketching `src/recommender.js` — the cosine-similarity query against `anime.synopsis_vec` is the simplest first cut and a good way to verify the embeddings landed correctly.
-
-**Don't do tomorrow:** auth, OAuth, routes, views. The build order is data-first; UI work is later.
+Next coding step is `src/embeddings.js`.
 
 ## When picking back up — concrete next step
 
@@ -104,8 +83,9 @@ If you're returning after time away, do this in order:
 2. **Confirm or revise the open decisions** in the "Open decisions" section below. Anything that has changed in your thinking, update here first.
 3. ~~First code to write is the file scaffold.~~ **Done 2026-06-07.** Scaffold exists, `npm run dev` boots cleanly.
 4. ~~Next up: the database.~~ **Done 2026-06-09.** Schema written, validated, on disk; `src/db.js` opens it with `sqlite-vec` loaded.
-5. **Next up: AniList client + catalog import** (see "Next move" above).
-6. **After that, in order:** embedding pipeline → recommender engine → auth → AniList OAuth flow → JSON API → views. Don't reorder.
+5. ~~Next up: AniList client.~~ **Done 2026-06-10.** `src/anilist.js` enumerates the catalog via `id_in` batching; smoke test passes.
+6. **Next up: embedding pipeline** (`src/embeddings.js`), then catalog import (`scripts/import-anime.js`). See "Next move" above.
+7. **After that, in order:** recommender engine → auth → AniList OAuth flow → JSON API → views. Don't reorder.
 
 ## Decisions log (with reasoning)
 
@@ -173,6 +153,20 @@ This is the authoritative list of locked-in choices and *why*. If you want to re
 **Decision:** No `/login` + `/signin` aliases. No `/register` + `/signup` aliases.
 **Why:** The old project had this and it doubled the URL space for no benefit.
 
+### AniList catalog enumeration: ID-batching, not Page-based pagination
+**Decision:** `src/anilist.js` walks the AniList ID space `1..highestId` in batches of 50 via `id_in: [...]`. No `Page(page: N)` deep pagination.
+**Why:** AniList enforces a hard **5000-entry depth cap** on `Page` queries (`page * perPage <= 5000`). It's undocumented but real. Worse, `pageInfo.total` and `pageInfo.lastPage` are **officially broken** per AniList's own docs at docs.anilist.co/guide/graphql/pagination — only `hasNextPage` is reliable. A full-catalog crawl via Page is therefore impossible. The canonical workaround, used by manami-project/modb-app (the aggregator behind anime-offline-database), is ID enumeration: every request stays at Page depth 1, the 5000 cap never fires, and we sidestep the broken `total` field entirely. We use `id_in: [50 ids]` to batch 50 IDs per request, which is 50× faster than manami's one-ID-per-request Kotlin implementation.
+
+**Mechanics:**
+1. `fetchHighestAnimeId()` — one query: `Page(perPage: 1) { media(type: ANIME, sort: ID_DESC) { id } }` returns the largest live ID.
+2. `fetchAnimeBatchByIds([1..50, 51..100, ...])` — fetches batches of 50.
+3. Standing filters baked into the query: `type: ANIME`, `countryOfOrigin: "JP"`, `isAdult: false`. IDs that fail these filters (manga, non-JP, hentai), as well as deleted IDs, are silently absent from the response. Caller diffs requested vs returned IDs to record "skip" entries.
+4. The import script will persist a `skip_ids.json` checkpoint so resumed crawls don't re-fetch known-empty IDs.
+
+### AniList rate limit: 27 req/min, not 90
+**Decision:** Throttle `src/anilist.js` to 1 request per 2200ms (~27 req/min) instead of the 800ms (~75/min) we initially planned.
+**Why:** AniList's documented limit is 90/min, but their docs at docs.anilist.co/guide/rate-limiting state the API is currently in a **degraded state and officially limited to 30/min** until full restoration. Tripping the degraded limit risks IP blocks. We target ~27/min (10% under 30) to leave headroom for retries. When AniList restores the 90/min limit, drop `MIN_INTERVAL_MS` from 2200 to 700.
+
 ### Adult content: filtered globally, no user toggle
 **Decision:** Every catalog query excludes titles where AniList's `isAdult` flag is true. No `users.show_adult` column, no settings toggle. Filter centralized in `src/db.js`.
 **Why:** AniList's `isAdult` flag specifically marks explicit sexual content (hentai), not gore or violence. So dark / violent / disturbing seinen (Dorohedoro, Chainsaw Man, Berserk, Devilman Crybaby, Hellsing, Attack on Titan) all stay in the catalog. The filter cleanly removes what shouldn't be in a general-purpose tracker without sacrificing any of the user's actual taste range. One less setting to design, one less column on `users`, one less query branch.
@@ -189,8 +183,9 @@ These have not yet been locked. Confirm or revise before writing the relevant co
 2. ~~Font choice.~~ **Decided 2026-06-06: Shippori Mincho, self-hosted.**
 3. **Final sakura red hex value.** Range is `#DC143C`–`#E03C42`. Pick the exact value when writing CSS; sample from the inspiration enso image if helpful.
 4. **AniList OAuth credentials.** User must register an app at https://anilist.co/settings/developer and provide `client_id`, `client_secret`, `redirect_uri`. These go in `.env`. (Active — user starting this now.)
-5. **First-run catalog import strategy.** Pulling ~15K anime from AniList with embeddings will take hours. Resumable batch? Background job? Cached snapshot?
-6. **Build order (locked 2026-06-06):** backend first, frontend later. No rushing. The recommender engine, catalog import, schema, and API surface get done before any view files exist beyond a placeholder.
+5. ~~First-run catalog import strategy.~~ **Decided 2026-06-10:** ID-enumeration via `id_in` batches of 50, walking 1..213,068. ~158 min API time at degraded 27 req/min. Two-phase: metadata first (resumable via `skip_ids.json` + `last_id_processed.json` checkpoint), embeddings second. See "AniList catalog enumeration" decision-log entry.
+6. **AniList API field shape for import (what we ask per anime).** ~~To confirm at start of next session.~~ **Decided 2026-06-10:** see the `ANIME_BATCH_QUERY` constant in `src/anilist.js` — every field documented and mapped to a schema column.
+7. **Build order (locked 2026-06-06):** backend first, frontend later. No rushing. The recommender engine, catalog import, schema, and API surface get done before any view files exist beyond a placeholder.
 
 ## Hard rules
 
