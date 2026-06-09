@@ -167,6 +167,14 @@ This is the authoritative list of locked-in choices and *why*. If you want to re
 3. Standing filters baked into the query: `type: ANIME`, `countryOfOrigin: "JP"`, `isAdult: false`. IDs that fail these filters (manga, non-JP, hentai), as well as deleted IDs, are silently absent from the response. Caller diffs requested vs returned IDs to record "skip" entries.
 4. The import script will persist a `skip_ids.json` checkpoint so resumed crawls don't re-fetch known-empty IDs.
 
+### Pre-flight known issues for `scripts/import-anime.js` (locked 2026-06-10)
+**Decision:** The importer must handle these explicitly. All were caught by `scripts/test-round-trip.js` before writing the importer.
+1. **FK constraint on `relations` and `community_recommendations` requires both anime to be in our catalog.** When importing anime A that points to anime B, B may not exist yet. The importer runs in two phases: (a) insert all anime + their lookup/join rows; (b) insert relations + community_recommendations, filtering to pairs where both AniList ids are present.
+2. **Strip HTML before embedding.** AniList descriptions contain `<br>`, `<i>`, etc. Without stripping, the embedding vector is ~7% noisier. Storage keeps the HTML (display layer sanitizes); only the input to `embed()` gets stripped.
+3. **Embedding model is English-only.** `Xenova/all-MiniLM-L6-v2` produces near-random vectors for non-English text (Japanese ↔ English equivalent: cosine 0.003). For v1 this is acceptable because AniList descriptions are English by default; obscure entries with only-Japanese descriptions will get noisy vectors. If we ever need real multilingual support, swap the `MODEL_ID` in `src/embeddings.js` to `Xenova/paraphrase-multilingual-MiniLM-L12-v2` (one-line change).
+4. **INSERT OR IGNORE pattern for all lookup tables** (genres, tags, studios, characters). Round-trip test confirmed it handles repeated rows cleanly.
+5. **Embedding edge cases:** `embed()` rejects empty/null input; importer must skip anime with null synopsis or fall back to title.
+
 ### Accepting protobufjs CVEs in @xenova/transformers
 **Decision:** Live with the 4 protobufjs vulnerabilities (3 high, 1 critical) flagged by `npm audit` for v1. Do not run `npm audit fix --force`.
 **Why:** The CVEs are in a deep transitive dep: `@xenova/transformers` → `onnxruntime-web` → `onnx-proto` → `protobufjs`. All of them require attacker-controlled protobuf input to exploit. We pass the embedder strings (anime synopses from AniList, which we already trust as our catalog source) and load Xenova-published model files from HuggingFace's CDN. There is no path for malicious protobuf to reach our code. `npm audit fix --force` would downgrade `@xenova/transformers` to 2.0.1 (breaking change, older model loader). Revisit when upstream releases a clean version.

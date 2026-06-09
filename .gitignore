@@ -13,6 +13,10 @@ db/*.sqlite-journal
 db/*.sqlite-wal
 db/*.sqlite-shm
 
+# Import checkpoints — written by scripts/import-anime.js; never commit
+db/skip_ids.json
+db/import-progress.json
+
 # Logs
 logs/
 *.log
