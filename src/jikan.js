@@ -15,7 +15,9 @@
 'use strict';
 
 const JIKAN_BASE = 'https://api.jikan.moe/v4';
-const MIN_INTERVAL_MS = 500; // ~2 req/sec
+const MIN_INTERVAL_MS = 700; // ~1.4 req/sec — well under Jikan's 3 req/sec
+// hard cap. The 500ms we tried first tripped their burst limiter on warm-up
+// (3 retries on the first batch); 700ms holds steady.
 const MAX_RETRIES = 5;
 const INITIAL_BACKOFF_MS = 2000;
 const USER_AGENT =
