@@ -92,8 +92,11 @@ CREATE TABLE IF NOT EXISTS anime (
   cover_image_url   TEXT,                       -- portrait poster
   banner_image_url  TEXT,                       -- wide banner; NULL ≈30-40% of titles; view layer falls back to a sumi-e placeholder
 
-  -- Synopsis (stored with AniList's HTML markup; stripped before embedding, sanitized before display)
-  synopsis          TEXT,                       -- input to synopsis_vec
+  -- Synopsis (TWO sources stored raw — see "Multi-source synopsis embedding" decision in CLAUDE.md)
+  -- Both are embedded separately; synopsis_vec is the AVERAGE of the two vectors.
+  -- Storing both raw lets us re-embed if we change models without re-fetching.
+  synopsis_mal      TEXT,                       -- MAL/Jikan synopsis (fan-prose, plot-and-mood focused)
+  synopsis_wiki     TEXT,                       -- Wikipedia Plot section (encyclopedic, structure/setting focused)
 
   -- Categorical signals (Sub-group C — see CLAUDE.md signal inventory #5-#8)
   format            TEXT,                       -- 'TV' | 'MOVIE' | 'OVA' | 'SPECIAL' | 'ONA' | 'MUSIC' | 'TV_SHORT' — signal #8
@@ -142,14 +145,13 @@ CREATE TABLE IF NOT EXISTS genres (
   name  TEXT NOT NULL UNIQUE       -- 'Action' | 'Adventure' | 'Comedy' | ... (~20 total)
 );
 
--- tags — AniList's ~300 community-curated, ranked descriptors.
+-- tags — community-curated descriptors aggregated by anime-offline-database
+-- from multiple sources (MAL + AniList + AniDB + Kitsu). Deduplicated by name.
+-- We compute TF-IDF weights from catalog frequency (no source-provided rank).
 CREATE TABLE IF NOT EXISTS tags (
-  id              INTEGER PRIMARY KEY,
-  anilist_tag_id  INTEGER UNIQUE,             -- AniList's tag ID; lets us re-sync without name matching
-  name            TEXT    NOT NULL UNIQUE,    -- 'Iyashikei', 'Time Skip', 'Found Family'
-  description     TEXT,                       -- AniList's short blurb explaining what the tag means (for tooltips)
-  category        TEXT,                       -- 'Theme-Action-Combat' | 'Setting-Universe' | 'Demographic' | etc.
-  is_adult        INTEGER NOT NULL DEFAULT 0  -- some tags are adult-only (rare; mostly explicit-content category)
+  id        INTEGER PRIMARY KEY,
+  name      TEXT    NOT NULL UNIQUE,    -- 'Iyashikei', 'Time Skip', 'Found Family'
+  is_adult  INTEGER NOT NULL DEFAULT 0  -- some tags flag adult-only context (rare)
 );
 
 -- studios — animation studios + licensors/producers.
@@ -187,14 +189,11 @@ CREATE TABLE IF NOT EXISTS anime_genres (
   FOREIGN KEY (genre_id) REFERENCES genres(id) ON DELETE CASCADE
 );
 
--- anime_tags — rank drives TF-IDF weighting (signal #2) AND the
--- "show tags with rank >= 60 by default" display rule on the detail page.
+-- anime_tags — many-to-many. TF-IDF weighting (signal #2) is computed at
+-- query time from catalog frequency, so no per-row rank is stored.
 CREATE TABLE IF NOT EXISTS anime_tags (
-  anime_id            INTEGER NOT NULL,
-  tag_id              INTEGER NOT NULL,
-  rank                INTEGER NOT NULL,            -- AniList's 0-100 relevance score (community-voted)
-  is_general_spoiler  INTEGER NOT NULL DEFAULT 0,  -- hide on detail page until user opts in
-  is_media_spoiler    INTEGER NOT NULL DEFAULT 0,  -- spoilers specific to this medium adaptation
+  anime_id  INTEGER NOT NULL,
+  tag_id    INTEGER NOT NULL,
   PRIMARY KEY (anime_id, tag_id),
   FOREIGN KEY (anime_id) REFERENCES anime(id) ON DELETE CASCADE,
   FOREIGN KEY (tag_id)   REFERENCES tags(id)  ON DELETE CASCADE

@@ -56,23 +56,25 @@ function stripHtml(text) {
   console.log('\nStep 3-7: Insert anime + lookups + joins (inside a ROLLBACK txn)...');
   db.exec('BEGIN');
   try {
-    // 3. anime row
+    // 3. anime row (post-pivot: synopsis_mal stand-in; real importer pulls
+    // synopsis_mal from Jikan and synopsis_wiki from Wikipedia, then averages
+    // the two embeddings into synopsis_vec)
     const animeStmt = db.prepare(`
       INSERT INTO anime (
         anilist_id, mal_id,
         title_romaji, title_english, title_native,
-        cover_image_url, banner_image_url, synopsis,
+        cover_image_url, banner_image_url, synopsis_mal, synopsis_wiki,
         format, source, episodes, duration_minutes, season, season_year, status,
         average_score, popularity, is_adult,
         synopsis_vec, created_at, synced_at
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
     `);
     const r = animeStmt.run(
       a.id, a.idMal,
       a.title.romaji, a.title.english, a.title.native,
-      a.coverImage?.large, a.bannerImage, a.description, // keep HTML in storage
+      a.coverImage?.large, a.bannerImage, a.description, null, // wiki added by real importer
       a.format, a.source, a.episodes, a.duration, a.season, a.seasonYear, a.status,
       a.averageScore, a.popularity, a.isAdult ? 1 : 0,
       synopsisVec, now(), now(),
@@ -90,17 +92,18 @@ function stripHtml(text) {
     }
     console.log(`  genres linked: ${a.genres.length} (${a.genres.join(', ')})`);
 
-    // 5. tags + anime_tags
+    // 5. tags + anime_tags (post-pivot: tags lookup is by name only; offline-DB
+    // tags have no anilist_tag_id, and we compute TF-IDF from frequency)
     const tagInsert = db.prepare(
-      'INSERT OR IGNORE INTO tags (anilist_tag_id, name, category, is_adult) VALUES (?, ?, ?, ?)',
+      'INSERT OR IGNORE INTO tags (name, is_adult) VALUES (?, ?)',
     );
-    const tagSelect = db.prepare('SELECT id FROM tags WHERE anilist_tag_id = ?');
+    const tagSelect = db.prepare('SELECT id FROM tags WHERE name = ?');
     const joinTag = db.prepare(
-      'INSERT OR IGNORE INTO anime_tags (anime_id, tag_id, rank, is_general_spoiler, is_media_spoiler) VALUES (?, ?, ?, ?, ?)',
+      'INSERT OR IGNORE INTO anime_tags (anime_id, tag_id) VALUES (?, ?)',
     );
     for (const t of a.tags) {
-      tagInsert.run(t.id, t.name, t.category, t.isAdult ? 1 : 0);
-      joinTag.run(animeId, tagSelect.get(t.id).id, t.rank, 0, 0);
+      tagInsert.run(t.name, t.isAdult ? 1 : 0);
+      joinTag.run(animeId, tagSelect.get(t.name).id);
     }
     console.log(`  tags linked: ${a.tags.length} (top: ${a.tags.slice(0, 3).map((t) => t.name).join(', ')})`);
 

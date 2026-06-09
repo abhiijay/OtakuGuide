@@ -14,9 +14,9 @@ It is *reference material only* — useful for the working auth middleware, the
 Jikan image-fetch logic, and the `user_preferences` schema spine. **Do not
 import wholesale.**
 
-## Current state (last updated 2026-06-10)
+## Current state (last updated 2026-06-10, post-pivot)
 
-**Scaffold + database + AniList client are live.** Express+EJS+Tailwind boots cleanly; the 15-table SQLite schema is on disk; `src/anilist.js` enumerates the AniList catalog via ID batching.
+**Scaffold + database + AniList client (now repurposed) + embeddings are live.** Express+EJS+Tailwind boots cleanly; 15-table SQLite schema reflects post-pivot shape (split synopsis columns, simplified tags). `src/anilist.js` retained for long-tail synopsis fallback; primary catalog/synopsis pipeline (offline-database + Jikan + Wikipedia) is next to build.
 
 **Repository:** https://github.com/abhiijay/OtakuGuide (public, branch `main`).
 
@@ -38,12 +38,20 @@ Files on disk:
 
 No auth, no API routes, no real views, no anime data yet. Catalog import is the next step.
 
-## Where we left off (2026-06-10)
+## Where we left off (2026-06-10, post-pivot)
 
-**AniList client + embeddings both done.**
+**Architecture pivoted, pre-flight clean, ready to write the new importer.**
 
-- `src/anilist.js` enumerates the catalog via ID batching, not Page-based pagination — see decision log below for why. Smoke test passes: Cowboy Bebop at id 1, highest id 213,068, 100% field coverage on every signal column for real anime.
-- `src/embeddings.js` wraps `Xenova/all-MiniLM-L6-v2`. Returns a 1536-byte Float32 Buffer (matches the schema CHECK constraint). First call downloads ~80MB into `node_modules/@xenova/transformers/.cache/`; subsequent calls reuse. Smoke test sanity check: similar synopses score 0.49 cosine similarity, unrelated ones 0.11 — model is genuinely picking up semantic meaning.
+What changed today after the pivot:
+- Catalog source pivoted from AniList scraping to `anime-offline-database` + Jikan (synopsis) + Wikipedia (supplemental synopsis). See "Architecture pivot" decision in the log below.
+- Schema simplified: `anime.synopsis` split into `synopsis_mal` + `synopsis_wiki`; `anime_tags.rank` + spoiler flags dropped; `tags.description` + `category` dropped.
+- DB re-initialized against the updated schema. Round-trip test re-run, still passes.
+- `src/anilist.js` retained for long-tail synopsis fallback; not in the main import path anymore.
+
+Earlier today (before the pivot):
+- `src/anilist.js` was built and tested as a full-catalog crawler — ID enumeration, 27 req/min throttle, retries. Now repurposed.
+- `src/embeddings.js` wraps `Xenova/all-MiniLM-L6-v2`. Returns a 1536-byte Float32 Buffer (matches the schema CHECK constraint). First call downloads ~80MB into `node_modules/@xenova/transformers/.cache/`; subsequent calls reuse. Smoke test sanity check: similar synopses score 0.49 cosine similarity, unrelated ones 0.11.
+- `scripts/test-round-trip.js` wires anilist + embeddings + db end-to-end for one anime, ROLLBACKs. Passes against the new schema (verified 2026-06-10).
 
 **Numbers from the smoke test:**
 - Highest AniList anime id: **213,068**
@@ -70,14 +78,22 @@ Captured feature idea: **character search** ("search Sasuke → show Naruto") wo
 
 ## Next move
 
-Build order from here:
-1. ~~`src/anilist.js`~~ **Done 2026-06-10.** ID-enumeration via `id_in` batches, 27 req/min throttle, retries on 429/5xx.
-2. ~~`src/embeddings.js`~~ **Done 2026-06-10.** `Xenova/all-MiniLM-L6-v2` wrapper, returns 1536-byte Float32 Buffer.
-3. **`scripts/import-anime.js`** — orchestrator: walk 1..213,068 in 50-ID batches → fills all 15 tables → generates embeddings. Resumable via `skip_ids.json` + `last_id_processed` checkpoint. Two-phase: metadata first, embeddings second. ~158 min API time + several hours of CPU-bound embeddings.
-4. **Run the import** — kick off, walk away. Wake to a populated database.
-5. Then: `src/recommender.js`, then auth, then routes, then views.
+Build order from here (post-pivot):
+1. ~~`src/anilist.js`~~ **Done; repurposed for on-demand long-tail fallback.**
+2. ~~`src/embeddings.js`~~ **Done 2026-06-10.** `Xenova/all-MiniLM-L6-v2` wrapper.
+3. **`src/offline-db.js`** — downloads `anime-offline-database-minified.json` to `db/anime-offline-database.json`, parses entries, yields normalized records. ~50 lines.
+4. **`src/jikan.js`** — `fetchSynopsis(mal_id)` + `fetchThemesDemographics(mal_id)`. 2 req/sec, retry on 429. Strip MAL attribution patterns. ~60 lines.
+5. **`src/wiki.js`** — `fetchPlotSection(title)`. Two-step: sections list → plot section text. 5 req/sec polite. Polite `User-Agent`. ~50 lines.
+6. **`scripts/import-anime.js`** — orchestrator:
+   - Phase 1: load offline-DB → upsert anime rows, genres/tags/studios + their joins
+   - Phase 2: per anime, fetch Jikan synopsis + themes/demographics + Wikipedia plot in parallel (limited concurrency)
+   - Phase 3: embed Jikan synopsis + Wikipedia plot per anime, average vectors, write `synopsis_vec`
+   - Phase 4: second pass for relations (from offline-DB's `relatedAnime`)
+   - Resumable via `db/import-progress.json` checkpoint.
+7. **Run the import** — overnight, ~8 hours total. Wake to a populated database.
+8. Then: `src/recommender.js` → auth → routes → views.
 
-Next coding step is `scripts/import-anime.js`.
+Next coding step is `src/offline-db.js`.
 
 ## When picking back up — concrete next step
 
@@ -166,6 +182,34 @@ This is the authoritative list of locked-in choices and *why*. If you want to re
 2. `fetchAnimeBatchByIds([1..50, 51..100, ...])` — fetches batches of 50.
 3. Standing filters baked into the query: `type: ANIME`, `countryOfOrigin: "JP"`, `isAdult: false`. IDs that fail these filters (manga, non-JP, hentai), as well as deleted IDs, are silently absent from the response. Caller diffs requested vs returned IDs to record "skip" entries.
 4. The import script will persist a `skip_ids.json` checkpoint so resumed crawls don't re-fetch known-empty IDs.
+
+### Architecture pivot 2026-06-10: catalog via offline-database, synopses via Jikan + Wikipedia
+**Decision:** Stop scraping AniList for bulk catalog/synopsis. New pipeline:
+1. **Catalog skeleton** from `manami-project/anime-offline-database` — one weekly-refreshed JSON, no API calls. Gives us every anime entry plus cross-IDs (MAL/AniList/Kitsu/AniDB) and aggregated tags.
+2. **Primary synopsis** from MAL via Jikan (`api.jikan.moe/v4/anime/{mal_id}`) — empirically the longest, most detailed fan-prose source. 2 req/sec, no auth.
+3. **Supplemental synopsis** from Wikipedia Plot section — `en.wikipedia.org/w/api.php` two-step (sections list → section text). 5 req/sec parallel, no auth.
+4. **Long-tail fallback** to AniList on-demand only — when a user views an anime for which we have no synopsis. One-off "client" use, defensible per TOS.
+
+**Why:**
+- **AniList TOS explicitly forbids bulk collection.** Their terms-of-use file at `AniList/docs/docs/guide/terms-of-use.md` prohibits hoarding, mass collection, and use within competing tracker services. OtakuGuide-as-originally-scoped hit all three landmines and risked an IP ban at any time.
+- **Empirical synopsis comparison (2026-06-10):** Wikipedia plot sections are genuinely stylistically distinct from MAL (encyclopedic vs fan-prose), often longer (2-8K chars vs MAL's 1K). Kitsu turned out to be near-verbatim copies of MAL — dropped from the plan. Tatami Galaxy demonstrated the point cleanly: MAL describes the inciting scene, Wikipedia explains the parallel-universe device, ANN names the supporting cast — three different perspectives on the same anime.
+- **Multi-source embedding averaging** (signal #1's new shape): embed MAL synopsis → vector A; embed Wikipedia plot → vector B; store the mean. Richer composite than any single source, no truncation loss.
+- **Cross-IDs come free** with the offline-database download — every entry has MAL/AniList/Kitsu/AniDB IDs, so multi-source resilience is baked in without extra work.
+
+**Time budget:** offline-DB download (~1 min) + Jikan synopses (~5 hr) + Wikipedia plots (~3.5 hr in parallel) + embeddings on CPU (a few hr). One overnight job, fully legal.
+
+### Signal table revisions (locked 2026-06-10)
+Some signals from the original 12-signal v1 list are deferred to v2 because the offline-database + Jikan path doesn't carry them cheaply:
+- **Signal #9 — character vectors:** offline-database doesn't include characters. Jikan exposes characters via a SEPARATE call (`/v4/anime/{id}/characters`), adding ~4 hours to import. Deferred to v2. The `characters` + `anime_characters` tables stay in the schema, just empty in v1.
+- **Community-curated recommendations** (originally an additional signal): same story — Jikan's `/v4/anime/{id}/recommendations` is a separate call, ~5 hours. Deferred. `community_recommendations` table stays empty in v1.
+- **Signal #12 relations:** offline-database has a `relatedAnime` field but doesn't categorize the relation type (sequel/prequel/spin-off/etc.). For v1 every relation is stored with `relation_type = 'RELATED'`. The franchise-duplicate filter still works (any related anime is excluded from discover); it's just blunter than the AniList-categorized version. Categorized relations come back in v2 if we add Jikan's `/relations` call.
+
+This breaks the original "12 signals in v1, no gaps" pledge. The reason is the AniList TOS pivot — the cost shifted from "everything included" to "everything except character + recs requires separate paid API calls each ~5 hours." The user agreed to the trade-off on 2026-06-10.
+
+### Schema simplifications from the pivot (locked 2026-06-10)
+- **`anime.synopsis` split** → `synopsis_mal` + `synopsis_wiki`. Both raw texts stored so we can re-embed if we change models without re-fetching.
+- **`anime_tags.rank` and spoiler flags dropped** — no source provides these. TF-IDF weights are computed at query time from catalog frequency.
+- **`tags.description` and `tags.category` dropped** — no source provides these without AniList.
 
 ### Pre-flight known issues for `scripts/import-anime.js` (locked 2026-06-10)
 **Decision:** The importer must handle these explicitly. All were caught by `scripts/test-round-trip.js` before writing the importer.
@@ -256,35 +300,65 @@ inspiration, update this section rather than treating the original as locked in.
 
 ## Data sourcing & resilience
 
-### Primary source: AniList
+(Architecture pivoted 2026-06-10 — see "Architecture pivot" decision in the log above for the full why.)
 
-We pull anime metadata, tags, characters, reviews, and user watch lists from AniList via its GraphQL API. AniList was chosen as the primary because it has the best tag system of any anime source (community-curated, ranked, categorized — directly powering signal #2 in the recommender), modern GraphQL means single-request fetches, and structured review + character entries are essential for the character-vector and review-aggregate-vector signals.
+### Primary catalog source: anime-offline-database (manami-project)
 
-OAuth: register an app at https://anilist.co/settings/developer. Provides `client_id` + `client_secret`. The `redirect_uri` is our callback URL (dev: `http://localhost:3000/auth/anilist/callback`). Token flow: authorization code → exchange for access token → store in `external_accounts` table.
+`https://github.com/manami-project/anime-offline-database` — a community-aggregated JSON snapshot combining MAL + AniList + Kitsu + AniDB + Notify.moe, refreshed weekly. We download one minified JSON file (~30K entries) at import time. Gives us:
 
-### Secondary sources (post-v1, optional)
+- Every Japanese anime (we filter to `type: TV/MOVIE/OVA/ONA/SPECIAL` and `JAPAN`)
+- Titles, year, episodes, format, status, score, image URLs
+- Cross-IDs to MAL, AniList, Kitsu, AniDB (the `sources` array)
+- Aggregated tags (deduplicated across all source databases — no per-source rank)
+- Studio + producer names
+- `relatedAnime` URLs (for the relations table, but without categorized relation_type)
 
-- **MyAnimeList via Jikan API** (https://jikan.moe) — free, 3 req/sec. Better source for: extra review text (larger user base writing them), older / obscure titles missing from AniList, bigger collaborative ratings matrix. Use as fallback when AniList lacks a field.
-- **Anime-Offline-Database** (https://github.com/manami-project/anime-offline-database) — community-aggregated JSON snapshot combining MAL + AniList + Kitsu + AniDB + Notify.moe. Refreshed weekly. Local snapshot is our fallback if any single source goes down.
-- **Manami ID-mapping** (same project) — AniList ↔ MAL ↔ Kitsu ↔ AniDB ID translation table. Lets us cross-reference the same anime across sources.
+No API calls. No rate limit. Legal use (the project explicitly publishes the dataset for redistribution).
+
+### Primary synopsis source: MAL via Jikan
+
+`https://api.jikan.moe/v4/anime/{mal_id}` — Jikan is the unofficial MAL REST API. 2 req/sec safe, no auth. We use the `mal_id` from the offline-database to look up each anime's synopsis. Empirical comparison (2026-06-10) showed Jikan synopses are consistently the longest and most detailed fan-prose available (averaging ~1000 chars, frequently 1500-2000 for popular anime).
+
+Jikan also returns themes + demographics in the same call — bonus tag-axis data, populated into our `tags` + `anime_tags` tables alongside the offline-DB tags.
+
+Strip trailing `[Written by MAL Rewrite]` / `(Source: ANN)` patterns before storing.
+
+### Supplemental synopsis source: Wikipedia Plot section
+
+`https://en.wikipedia.org/w/api.php` — two-step (sections list → plot section text). 5 req/sec polite limit, no auth, just a descriptive `User-Agent`. CC BY-SA license requires footer attribution.
+
+Empirically distinct from Jikan: encyclopedic style, focuses on plot structure rather than mood/character intros, often 2-8K chars (much longer than MAL on mainstream titles). Tatami Galaxy demo: MAL describes the inciting scene, Wikipedia explains the parallel-universe device — different angles on the same anime.
+
+Coverage on test set: 8/8 (will degrade on obscure titles — fall back to Jikan-only when Wikipedia has no plot section).
+
+### Synopsis embedding (the new shape of signal #1)
+
+For each anime:
+1. Embed Jikan synopsis → vector A
+2. Embed Wikipedia plot → vector B (if present)
+3. Store `synopsis_vec = mean(A, B)` (or just A if B is missing)
+4. Keep both raw texts (`synopsis_mal`, `synopsis_wiki`) so re-embedding under a new model doesn't require re-fetching.
+
+### Long-tail fallback: AniList on-demand
+
+When a user views an anime for which we have no synopsis (both Jikan and Wikipedia missed), `src/anilist.js` fetches it once on-demand and caches. This is "client" use, not bulk collection — fully within AniList's TOS.
 
 ### Schema implications (v1)
 
-- `anime` table has both `anilist_id` and `mal_id` columns (both nullable) from day one — supports future multi-source merging without migration.
+- `anime` table has `anilist_id`, `mal_id`, plus we'll add provenance fields if needed in v2. Both nullable — anime missing from MAL or AniList stay in the catalog with whatever cross-IDs they do have.
+- The offline-database download lives at `db/anime-offline-database.json` (gitignored — it's ~10 MB and refreshed independently).
 - `external_accounts` table supports multiple providers (`provider: 'anilist' | 'mal' | ...`) — supports future OAuth providers without migration.
-- The catalog import is wrapped behind a single function (`fetchAnimeMetadata(id) → AnimeData`) so the source can be swapped without touching the rest of the code.
 
 ### Resilience guarantees
 
-If AniList disappears tomorrow:
-- **The app keeps working.** All anime metadata + embeddings are stored locally in SQLite. The recommender does not make live API calls.
-- **User data is safe.** Lists, ratings, progress, favorites all live in our SQLite, not AniList's.
-- **New imports switch sources.** Catalog import is one function — point it at Jikan or the Offline Database.
-- **Login still works.** Email/password is independent of AniList OAuth. Users can also add MAL OAuth if implemented.
+If any single source disappears tomorrow:
+- **Offline-database goes dark:** we have the last JSON download cached locally; new entries miss until restored. App keeps working on existing catalog.
+- **Jikan goes dark:** synopses can be re-imported from Kitsu (~80% coverage) or AniList (small-scale on-demand). App keeps working on cached embeddings.
+- **Wikipedia goes dark:** signal #1 falls back to single-source (Jikan-only embedding). Recommendations slightly less rich but functional.
+- **AniList goes dark:** we lose user-list sync only; OtakuGuide's catalog and recommender are not affected.
+- **User data is safe.** Lists, ratings, progress, favorites all live in our SQLite, not any third party's.
 
-What we'd lose: live sync of progress changes between OtakuGuide and the user's external AniList account (cosmetic — local data is intact).
-
-This is ~30 minutes of forethought at schema-design time. Build it in, never need to refactor.
+What we'd lose by losing AniList specifically: live sync of progress between OtakuGuide and a user's external AniList account (cosmetic — local data is intact).
 
 ## Database
 

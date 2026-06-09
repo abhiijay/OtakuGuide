@@ -24,24 +24,26 @@ pieces and a "recommendation engine" that was genre-substring matching
 pretending to be ML. This rebuild starts over from clean foundations,
 with every file earning its place and every algorithm understood line by line.
 
-## Project status (as of 2026-06-06)
+## Project status (as of 2026-06-10)
 
-**Nothing is built yet.** Only documentation exists on disk:
+Scaffold + database + AniList client + embeddings are live. Catalog importer is the next big piece.
 
-- `README.md` (this file)
-- `CLAUDE.md` (technical context, auto-loaded by Claude in this project)
-
-No source code, no `package.json`, no `node_modules`, no database. The folder is intentionally minimal until planning is finalized.
-
-If you're picking this back up after time away, see "How to resume" near the bottom.
+If you're picking this back up after time away, see "How to resume" near the bottom — but read `CLAUDE.md` first for the up-to-date decisions log.
 
 ## Stack
 
 - **Node.js + Express** — web server
 - **EJS** — server-rendered HTML templates
 - **Tailwind CSS** — utility-first styling, compiled locally (no CDN)
-- **SQLite via better-sqlite3** — single-file database, zero config
-- **AniList API** — OAuth login + sync your existing anime list
+- **SQLite via better-sqlite3 + sqlite-vec** — single-file database with vector search
+- **`@xenova/transformers`** — local sentence embeddings (no API keys, no cost)
+
+### Data sources
+
+- **`anime-offline-database`** (manami-project) — catalog skeleton + cross-IDs + aggregated tags, refreshed weekly. One JSON download, no API calls.
+- **Jikan (MAL API)** — primary synopsis source (fan-prose, plot/character focused)
+- **Wikipedia Plot section** — supplemental synopsis (encyclopedic, structure/setting focused). Both embedded separately and averaged into the recommender vector.
+- **AniList** — used only for the optional user-list sync feature + on-demand long-tail synopsis fallback. **No bulk scraping** (their TOS forbids it).
 
 ## File map
 
@@ -108,13 +110,16 @@ sliders for "similar story / similar characters / similar tone / similar style."
 
 ### Signals used (v1)
 
-- Synopsis embedding (meaning-level similarity, not keyword match)
-- AniList tags (TF-IDF — rare tags weighted higher)
+- Synopsis embedding — meaning-level similarity from averaged MAL + Wikipedia vectors
+- Tags from `anime-offline-database` (aggregated cross-source) + MAL themes + demographics — TF-IDF weighted from catalog frequency
 - Genre, studio, era, episode count, source material, format
-- Character vectors (averaged main-cast embeddings — for "characters like Naruto")
-- Review-aggregate vector (captures humor and tone from community discourse)
-- Mean score & popularity (used only for re-ranking, not similarity)
-- Relations graph (filters sequels/prequels out of "discover" results)
+- Average score & popularity — used only for re-ranking, not similarity
+- Relations graph (filters franchise duplicates out of "discover" results)
+
+**Deferred to v2** (cost-benefit shifted after the 2026-06-10 architecture pivot):
+- Character vectors (would need separate Jikan calls, ~4 extra hours of import time)
+- Community-curated recommendations (same cost trade-off)
+- Categorized relations (`SEQUEL` / `PREQUEL` / etc. — v1 just stores `RELATED`)
 
 ### Recommender-theory features (v1)
 
