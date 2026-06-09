@@ -69,6 +69,7 @@ async function fetchWithRetry(url) {
     try {
       res = await fetch(url, {
         headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        signal: AbortSignal.timeout(30000), // hung-connection guard
       });
     } catch (err) {
       if (attempt === MAX_RETRIES) throw err;
@@ -95,6 +96,10 @@ async function fetchWithRetry(url) {
     await sleep(waitMs);
     backoff *= 2;
   }
+  // Defensive: the loop should never fall through (the final attempt
+  // throws via the !retryable || attempt === MAX_RETRIES branch above),
+  // but if it ever does, throw rather than returning undefined.
+  throw new Error('Jikan retries exhausted');
 }
 
 // ---------- public API ----------

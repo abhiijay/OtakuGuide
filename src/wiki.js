@@ -58,6 +58,7 @@ async function fetchJson(url) {
     try {
       res = await fetch(url, {
         headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        signal: AbortSignal.timeout(30000), // hung-connection guard
       });
     } catch (err) {
       if (attempt === MAX_RETRIES) throw err;
@@ -67,7 +68,22 @@ async function fetchJson(url) {
       continue;
     }
 
-    if (res.ok) return res.json();
+    if (res.ok) {
+      // Wikipedia occasionally serves a 200 with non-JSON (rate-limit walls,
+      // captcha pages). Treat that as retryable rather than letting the JSON
+      // parse error escape unhandled.
+      try {
+        return await res.json();
+      } catch (err) {
+        if (attempt === MAX_RETRIES) {
+          throw new Error(`Wikipedia 200 with non-JSON body: ${err.message}`);
+        }
+        console.warn(`Wikipedia 200 with non-JSON body, retrying in ${backoff}ms`);
+        await sleep(backoff);
+        backoff *= 2;
+        continue;
+      }
+    }
 
     const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
     if (!retryable || attempt === MAX_RETRIES) {
@@ -83,6 +99,8 @@ async function fetchJson(url) {
     await sleep(waitMs);
     backoff *= 2;
   }
+  // Defensive — see jikan.js note. Should never fall through.
+  throw new Error('Wikipedia retries exhausted');
 }
 
 // MediaWiki uses underscore-separated titles. Don't double-encode spaces.

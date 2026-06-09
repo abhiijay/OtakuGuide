@@ -264,6 +264,10 @@ async function runPhaseB(opts) {
   let stats = { malHit: 0, wikiHit: 0, bothHit: 0, neitherHit: 0 };
 
   for (const anime of remaining) {
+    if (typeof interrupted !== 'undefined' && interrupted) {
+      console.warn('  loop exiting cleanly due to Ctrl-C.');
+      break;
+    }
     try {
       // Fire both fetches in parallel — each module's rate limiter
       // throttles independently of the other.
@@ -289,9 +293,13 @@ async function runPhaseB(opts) {
       else stats.neitherHit++;
 
       // Embed whatever we got, average if both, write nothing if neither.
+      // Require at least 20 useful chars to avoid embedding "N/A" / whitespace
+      // / placeholder strings, which produce degenerate vectors.
+      const useMal = synopsisMal && synopsisMal.trim().length >= 20;
+      const useWiki = synopsisWiki && synopsisWiki.trim().length >= 20;
       const vectors = [];
-      if (synopsisMal) vectors.push(await embed(synopsisMal));
-      if (synopsisWiki) vectors.push(await embed(synopsisWiki));
+      if (useMal) vectors.push(await embed(synopsisMal));
+      if (useWiki) vectors.push(await embed(synopsisWiki));
       const synopsisVec = averageVectors(vectors);
 
       // Update inside its own transaction so a later crash leaves the
@@ -331,9 +339,19 @@ async function runPhaseB(opts) {
       const elapsed = Date.now() - t0;
       const rate = processed / (elapsed / 1000); // anime/sec
       const etaMs = ((remaining.length - processed) / rate) * 1000;
+      const rssMb = (process.memoryUsage().rss / 1e6).toFixed(0);
       console.log(
-        `  ${processed}/${remaining.length} | ${stats.bothHit} both, ${stats.malHit} mal-only, ${stats.wikiHit} wiki-only, ${stats.neitherHit} miss | ETA ${fmtDuration(etaMs)}`,
+        `  ${processed}/${remaining.length} | ${stats.bothHit} both, ${stats.malHit} mal-only, ${stats.wikiHit} wiki-only, ${stats.neitherHit} miss | ETA ${fmtDuration(etaMs)} | rss ${rssMb}MB`,
       );
+    }
+    // Periodic WAL checkpoint stops the -wal file from growing unbounded
+    // over a 6-9 hour write loop.
+    if (processed % 500 === 0) {
+      try {
+        db.pragma('wal_checkpoint(TRUNCATE)');
+      } catch (err) {
+        console.warn(`  wal_checkpoint failed (non-fatal): ${err.message}`);
+      }
     }
   }
 
@@ -396,6 +414,20 @@ function runPhaseC(records) {
   console.log(`  ${inserted.toLocaleString()} relations inserted, ${skipped.toLocaleString()} skipped (target not in catalog) in ${fmtDuration(Date.now() - t0)}`);
 }
 
+// Graceful Ctrl-C — finish the in-flight anime, then exit cleanly so the
+// WAL is checkpointed and the DB is closed. Without this, killing the
+// import mid-batch can leave the -wal file un-checkpointed (still
+// recoverable, just messier).
+let interrupted = false;
+process.on('SIGINT', () => {
+  if (interrupted) {
+    console.error('\nSecond Ctrl-C — exiting immediately.');
+    process.exit(130);
+  }
+  interrupted = true;
+  console.warn('\nCtrl-C received. Finishing the current anime, then exiting...');
+});
+
 // ---------- main ----------
 (async () => {
   const opts = parseArgs(process.argv);
@@ -412,10 +444,17 @@ function runPhaseC(records) {
   await runPhaseB(opts);
   runPhaseC(records);
 
-  console.log('\nImport complete.');
+  // Final WAL checkpoint + clean close. better-sqlite3 closes the WAL on
+  // db.close() but an explicit TRUNCATE first keeps the file tidy.
+  db.pragma('wal_checkpoint(TRUNCATE)');
   db.close();
+  console.log('\nImport complete.');
+  if (interrupted) process.exit(130);
 })().catch((err) => {
   console.error('\nImport failed:', err.message);
   if (err.stack) console.error(err.stack);
+  try {
+    db.close(); // flushes WAL before exit
+  } catch {}
   process.exit(1);
 });

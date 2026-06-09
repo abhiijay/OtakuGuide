@@ -114,7 +114,12 @@ function isCacheFresh() {
 }
 
 async function downloadSnapshot() {
-  const res = await fetch(SOURCE_URL, { headers: { 'User-Agent': USER_AGENT } });
+  // 2-minute timeout: the file is ~58 MB; on a slow connection 60s might
+  // not be enough but more than 2min and something's wrong.
+  const res = await fetch(SOURCE_URL, {
+    headers: { 'User-Agent': USER_AGENT },
+    signal: AbortSignal.timeout(120000),
+  });
   if (!res.ok) {
     throw new Error(`Download failed: HTTP ${res.status} from ${SOURCE_URL}`);
   }
