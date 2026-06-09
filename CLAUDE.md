@@ -33,13 +33,17 @@ Files on disk:
 - `db/otakuguide.sqlite` — initialized empty database file (gitignored)
 - `scripts/init-db.js` — runs `schema.sql` against `db/otakuguide.sqlite` (idempotent)
 - `src/db.js` — single SQLite connection; `foreign_keys=ON`, `journal_mode=WAL`, `sqlite-vec` loaded
-- **`src/anilist.js`** — AniList GraphQL client. Exports `fetchHighestAnimeId()` and `fetchAnimeBatchByIds(ids)`. ID-enumeration strategy (not Page-based). 2200ms rate limiter. Smoke test included (`node src/anilist.js`).
+- `src/anilist.js` — AniList GraphQL client. Exports `fetchHighestAnimeId()` and `fetchAnimeBatchByIds(ids)`. ID-enumeration strategy (not Page-based). 2200ms rate limiter. Smoke test included (`node src/anilist.js`).
+- **`src/embeddings.js`** — `Xenova/all-MiniLM-L6-v2` wrapper. Exports `embed(text)` returning a 1536-byte Float32 Buffer. Lazy-loads the model on first call (~80MB download). Smoke test included (`node src/embeddings.js`).
 
 No auth, no API routes, no real views, no anime data yet. Catalog import is the next step.
 
 ## Where we left off (2026-06-10)
 
-**AniList client done.** `src/anilist.js` enumerates the catalog via ID batching, not Page-based pagination — see decision log below for why. Smoke test passes: Cowboy Bebop at id 1, highest id 213,068, 100% field coverage on every signal column for real anime.
+**AniList client + embeddings both done.**
+
+- `src/anilist.js` enumerates the catalog via ID batching, not Page-based pagination — see decision log below for why. Smoke test passes: Cowboy Bebop at id 1, highest id 213,068, 100% field coverage on every signal column for real anime.
+- `src/embeddings.js` wraps `Xenova/all-MiniLM-L6-v2`. Returns a 1536-byte Float32 Buffer (matches the schema CHECK constraint). First call downloads ~80MB into `node_modules/@xenova/transformers/.cache/`; subsequent calls reuse. Smoke test sanity check: similar synopses score 0.49 cosine similarity, unrelated ones 0.11 — model is genuinely picking up semantic meaning.
 
 **Numbers from the smoke test:**
 - Highest AniList anime id: **213,068**
@@ -67,13 +71,13 @@ Captured feature idea: **character search** ("search Sasuke → show Naruto") wo
 ## Next move
 
 Build order from here:
-1. ~~`src/anilist.js`~~ **Done 2026-06-10.** ID-enumeration via `id_in` batches, 27 req/min throttle, retries on 429/5xx. See decision-log entries "AniList catalog enumeration" and "AniList rate limit."
-2. **`src/embeddings.js`** — `@xenova/transformers` wrapper (~40 lines)
+1. ~~`src/anilist.js`~~ **Done 2026-06-10.** ID-enumeration via `id_in` batches, 27 req/min throttle, retries on 429/5xx.
+2. ~~`src/embeddings.js`~~ **Done 2026-06-10.** `Xenova/all-MiniLM-L6-v2` wrapper, returns 1536-byte Float32 Buffer.
 3. **`scripts/import-anime.js`** — orchestrator: walk 1..213,068 in 50-ID batches → fills all 15 tables → generates embeddings. Resumable via `skip_ids.json` + `last_id_processed` checkpoint. Two-phase: metadata first, embeddings second. ~158 min API time + several hours of CPU-bound embeddings.
 4. **Run the import** — kick off, walk away. Wake to a populated database.
 5. Then: `src/recommender.js`, then auth, then routes, then views.
 
-Next coding step is `src/embeddings.js`.
+Next coding step is `scripts/import-anime.js`.
 
 ## When picking back up — concrete next step
 
@@ -162,6 +166,10 @@ This is the authoritative list of locked-in choices and *why*. If you want to re
 2. `fetchAnimeBatchByIds([1..50, 51..100, ...])` — fetches batches of 50.
 3. Standing filters baked into the query: `type: ANIME`, `countryOfOrigin: "JP"`, `isAdult: false`. IDs that fail these filters (manga, non-JP, hentai), as well as deleted IDs, are silently absent from the response. Caller diffs requested vs returned IDs to record "skip" entries.
 4. The import script will persist a `skip_ids.json` checkpoint so resumed crawls don't re-fetch known-empty IDs.
+
+### Accepting protobufjs CVEs in @xenova/transformers
+**Decision:** Live with the 4 protobufjs vulnerabilities (3 high, 1 critical) flagged by `npm audit` for v1. Do not run `npm audit fix --force`.
+**Why:** The CVEs are in a deep transitive dep: `@xenova/transformers` → `onnxruntime-web` → `onnx-proto` → `protobufjs`. All of them require attacker-controlled protobuf input to exploit. We pass the embedder strings (anime synopses from AniList, which we already trust as our catalog source) and load Xenova-published model files from HuggingFace's CDN. There is no path for malicious protobuf to reach our code. `npm audit fix --force` would downgrade `@xenova/transformers` to 2.0.1 (breaking change, older model loader). Revisit when upstream releases a clean version.
 
 ### AniList rate limit: 27 req/min, not 90
 **Decision:** Throttle `src/anilist.js` to 1 request per 2200ms (~27 req/min) instead of the 800ms (~75/min) we initially planned.
