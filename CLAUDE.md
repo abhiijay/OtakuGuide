@@ -38,27 +38,67 @@ Files on disk:
 
 No auth, no API routes, no real views, no anime data yet. Catalog import is the next step.
 
-## Where we left off (2026-06-10, post-pivot)
+## Where we left off (2026-06-10 night)
 
-**Architecture pivoted, pre-flight clean, ready to write the new importer.**
+**Full import pipeline built, tested, audited, and ready to launch tomorrow.**
 
-What changed today after the pivot:
-- Catalog source pivoted from AniList scraping to `anime-offline-database` + Jikan (synopsis) + Wikipedia (supplemental synopsis). See "Architecture pivot" decision in the log below.
-- Schema simplified: `anime.synopsis` split into `synopsis_mal` + `synopsis_wiki`; `anime_tags.rank` + spoiler flags dropped; `tags.description` + `category` dropped.
-- DB re-initialized against the updated schema. Round-trip test re-run, still passes.
-- `src/anilist.js` retained for long-tail synopsis fallback; not in the main import path anymore.
+Everything for the catalog import is on disk and verified end-to-end:
+- `src/offline-db.js` — downloads 40,921-entry catalog snapshot (one JSON, ~58 MB, cached at `db/anime-offline-database.json` for 7 days)
+- `src/jikan.js` — MAL synopsis + themes + demographics, 700ms rate limit, 30s fetch timeout
+- `src/wiki.js` — Wikipedia Plot section fetcher, 200ms rate limit, 30s fetch timeout, two-step (sections → text)
+- `src/embeddings.js` — `Xenova/all-MiniLM-L6-v2`, 1536-byte BLOBs
+- `src/anilist.js` — repurposed for long-tail on-demand fallback only
+- `scripts/import-anime.js` — 3-phase orchestrator (catalog skeleton → per-anime enrichment → relations), resumable, WAL-checkpointed, SIGINT-clean
 
-Earlier today (before the pivot):
-- `src/anilist.js` was built and tested as a full-catalog crawler — ID enumeration, 27 req/min throttle, retries. Now repurposed.
-- `src/embeddings.js` wraps `Xenova/all-MiniLM-L6-v2`. Returns a 1536-byte Float32 Buffer (matches the schema CHECK constraint). First call downloads ~80MB into `node_modules/@xenova/transformers/.cache/`; subsequent calls reuse. Smoke test sanity check: similar synopses score 0.49 cosine similarity, unrelated ones 0.11.
-- `scripts/test-round-trip.js` wires anilist + embeddings + db end-to-end for one anime, ROLLBACKs. Passes against the new schema (verified 2026-06-10).
+**Two smoke runs verified the pipeline (40 anime, mal_id 1-58):**
+- First 20 (mal 1-29): 10 both, 10 mal-only, 0 wiki-only, 0 miss
+- Next 20 (mal 30-58): 3 both, 17 mal-only, 0 wiki-only, 0 miss
+- Resume confirmed (`WHERE synopsis_vec IS NULL` filter)
+- BLOB round-trips through `vec_distance_cosine` perfectly
+- RSS ~540 MB during run (embedding model in memory, no leak observed)
 
-**Numbers from the smoke test:**
-- Highest AniList anime id: **213,068**
-- ID batches at 50 per request: **~4,262 requests** to cover the full ID space
-- At ~27 req/min (degraded rate limit): **~158 min (~2.6 hours)** of pure API time
-- Hit rate is low in mid-range (a 100k-slice returned 3/50) — most IDs are manga, non-JP, deleted, or adult. The actual Japanese-anime catalog will be in the tens of thousands, not 213k.
-- Field coverage on real anime: **100% on every critical column**. Minor expected nulls: 88% English title (some have none), 91% banner image (some lack banner), 97% episodes (ongoing series), 97% relations/recommendations (standalone niche titles).
+**Six audit fixes applied (independent code review):**
+1. `AbortSignal.timeout(30000)` on every fetch — prevents hung connections
+2. Explicit throw after retry loops (no `undefined` return on exhaustion)
+3. Wikipedia non-JSON-200 wrapped in try/catch + retried
+4. WAL checkpoint every 500 anime + final checkpoint before close
+5. `db.close()` in error path (flushes WAL on crash)
+6. Trim-length >= 20 guard before embedding (rejects "N/A" / whitespace)
+
+Plus: SIGINT handler (Ctrl-C finishes current anime then exits clean) and RSS-per-50-anime memory line for leak visibility.
+
+## Tomorrow's pickup (2026-06-11)
+
+**The one command:**
+
+```bash
+cd /Users/homebase/Projects/OtakuGuide
+npm run import
+```
+
+**Expected behavior:**
+- First ~30 seconds: offline-DB load + Phase A skeleton (skipped if already populated from the smoke runs — currently 40 rows)
+- After that, Phase B starts. ETA shows up after the first 50 anime are processed (~1 min in).
+- Progress line every 50 anime. WAL checkpoint every 500. Memory line on each progress log.
+- **Total wall time: 6-9 hours.** Runs unattended.
+- If interrupted (Ctrl-C, sleep, crash): re-run `npm run import` — picks up automatically, no flags.
+
+**While it runs:**
+- Don't close the laptop lid (suspends the process; resumable but slows you down).
+- Consider `caffeinate -di npm run import` instead — keeps the system awake until the process exits.
+- Disk usage: peak ~250 MB (~60 MB offline-DB cache, ~80 MB DB w/ embeddings, ~80 MB embedding model in node_modules).
+
+**When it finishes:** the catalog is alive. Next coding step is `src/recommender.js`.
+
+## Earlier today (2026-06-10) — the AniList pivot
+
+Started the day planning to bulk-scrape AniList via ID enumeration (`fetchHighestAnimeId()` + `fetchAnimeBatchByIds(ids)`, 27 req/min). Wrote and smoke-tested the client.
+
+Then the etiquette-research pass uncovered: **AniList's TOS explicitly forbids bulk collection, mass storage, and use within competing tracker services.** Hard stop on the original plan.
+
+Pivoted same day to: catalog via `anime-offline-database` + synopses via Jikan/MAL + supplemental synopses via Wikipedia. Legal, faster (one JSON download vs 3hr API scrape), comparable coverage. See "Architecture pivot" decision-log entry below for the empirical synopsis-comparison work that backed the call.
+
+`src/anilist.js` stays in tree — repurposed for on-demand long-tail fallback when a user looks up an anime missing from both Jikan and Wikipedia.
 
 ## Earlier — schema phase (2026-06-09)
 
