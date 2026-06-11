@@ -1,13 +1,13 @@
 // src/jikan.js
 // MAL synopsis fetcher via Jikan (the unofficial MyAnimeList REST API).
-// `GET /v4/anime/{mal_id}` returns the synopsis plus themes and
-// demographics — three signals from one call.
+// `GET /v4/anime/{mal_id}` returns the synopsis plus genres, themes and
+// demographics — four signals from one call.
 //
 // Rate limit: Jikan advertises 3 req/sec and 60 req/min. We target
 // ~2 req/sec (one request every 500ms) to leave headroom for retries.
 //
 // Exports:
-//   fetchAnime(mal_id) -> { synopsis, themes, demographics } | null
+//   fetchAnime(mal_id) -> { synopsis, source, genres, themes, demographics } | null
 //
 // Returns null for 404 (anime not in MAL) so callers can advance their
 // checkpoint without retrying. All other errors throw.
@@ -105,12 +105,14 @@ async function fetchWithRetry(url) {
 // ---------- public API ----------
 
 // Fetches one anime's MAL detail. Returns:
-//   { synopsis, themes, demographics }   on success
-//   null                                  if MAL has no entry (404)
+//   { synopsis, genres, themes, demographics }   on success
+//   null                                          if MAL has no entry (404)
 //
 // `synopsis` is plain English text with attribution tags stripped.
-// `themes` and `demographics` are arrays of { mal_id, name } objects
-// (e.g. [{ mal_id: 30, name: 'Detective' }], [{ mal_id: 27, name: 'Shounen' }]).
+// `genres`, `themes` and `demographics` are arrays of { mal_id, name }
+// objects (e.g. [{ mal_id: 1, name: 'Action' }], [{ mal_id: 27, name: 'Shounen' }]).
+// `genres` is MAL's curated ~20-genre list — distinct from themes, which
+// are finer-grained descriptors.
 async function fetchAnime(mal_id) {
   if (typeof mal_id !== 'number' || mal_id <= 0) {
     throw new Error(`fetchAnime(mal_id) requires a positive integer, got ${mal_id}`);
@@ -127,6 +129,8 @@ async function fetchAnime(mal_id) {
 
   return {
     synopsis: stripAttribution(d.synopsis || ''),
+    source: d.source || null, // 'Manga' | 'Light novel' | 'Original' | ... — signal #7
+    genres: (d.genres || []).map((t) => ({ mal_id: t.mal_id, name: t.name })),
     themes: (d.themes || []).map((t) => ({ mal_id: t.mal_id, name: t.name })),
     demographics: (d.demographics || []).map((t) => ({ mal_id: t.mal_id, name: t.name })),
   };
@@ -157,6 +161,7 @@ if (require.main === module) {
       }
       console.log(`  synopsis: ${result.synopsis.length} chars`);
       console.log(`  preview:  ${result.synopsis.slice(0, 120)}...`);
+      console.log(`  genres:   [${result.genres.map((t) => t.name).join(', ')}]`);
       console.log(`  themes:   [${result.themes.map((t) => t.name).join(', ')}]`);
       console.log(`  demogs:   [${result.demographics.map((t) => t.name).join(', ')}]`);
       const stillAttributed = /\[Written by|\(Source:/.test(result.synopsis);

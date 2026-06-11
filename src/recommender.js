@@ -9,10 +9,23 @@
 //
 // Roadmap (each commit adds one signal, smoke-tested against real data):
 //   #1 synopsis embedding via sqlite-vec       [LIVE]
-//   #2 tag TF-IDF (with db/tag-aliases.json)   [next]
-//   #3 genre one-hot overlap
-//   #4 studio match
-//   #5-#8 era / episode-count / source / format categoricals
+//   #2 tag TF-IDF (with db/tag-aliases.json)   [LIVE]
+//   #3 genre Jaccard overlap                   [LIVE — needs scripts/seed-genres-from-tags.js run once]
+//   #4 studio match (IDF-weighted)             [LIVE]
+//   #5 era proximity                           [LIVE — refiner, see below]
+//   #6 episode-count bucket                    [LIVE — refiner]
+//   #7 source material                         [blocked — anime.source column empty]
+//   #8 format kinship                          [LIVE — refiner]
+//
+// Generators vs refiners:
+//   Signals #1-#4 are CANDIDATE GENERATORS — they're sparse enough that
+//   "top 100 by this signal" is a meaningful list. Signals #5/#6/#8 are
+//   too dense for that (thousands of anime tie at "same year" / "same
+//   format", so a 100-row pool would be an arbitrary slice). They run as
+//   REFINERS instead: once the generators have produced a merged pool,
+//   each candidate gets era/episodes/format scores computed against the
+//   query anime directly — deterministic, no pool-cap lottery — and those
+//   weighted scores adjust the ranking before the final sort.
 //   #9 character vectors                       [needs v2 import]
 //   #10 review vectors                         [needs v2 import]
 //   #11 popularity + quality re-rank (not a similarity weight)
@@ -308,6 +321,187 @@ function neighborsByTags(animeId, limit = 100) {
 }
 
 // =============================================================================
+// Signal #3 — genre Jaccard overlap (live)
+// =============================================================================
+
+// Top-K nearest anime by Jaccard similarity over genre sets:
+//
+//   score = |shared genres| / |union of both genre sets|
+//         = shared / (query_count + candidate_count - shared)
+//
+// Why Jaccard instead of another TF-IDF sum like signal #2:
+//   - Bounded [0, 1]. A candidate slathered in 8 genres can't outscore a
+//     tight 2-for-2 match just by surface area — the union term in the
+//     denominator punishes genre-spam.
+//   - Deliberately a DIFFERENT shape of opinion than tags. Genres also
+//     exist as tags, so re-running TF-IDF here would mostly double-count
+//     signal #2. Jaccard asks "how much of your identity overlaps with
+//     mine," which tags' unbounded sum does not.
+//
+// With only 18 genres, exact-score ties are common (thousands of pairs
+// share {Action, Comedy} perfectly). Ties break toward higher community
+// rating so the LIMIT slice is deterministic and quality-leaning.
+function neighborsByGenres(animeId, limit = 100) {
+  const queryCount = db.prepare(
+    'SELECT COUNT(*) AS n FROM anime_genres WHERE anime_id = ?'
+  ).get(animeId).n;
+
+  if (queryCount === 0) return [];
+
+  return db.prepare(`
+    WITH q AS (
+      SELECT genre_id FROM anime_genres WHERE anime_id = ?
+    ),
+    shared AS (
+      SELECT ag.anime_id, COUNT(*) AS n_shared
+      FROM anime_genres ag
+      JOIN q ON q.genre_id = ag.genre_id
+      WHERE ag.anime_id != ?
+      GROUP BY ag.anime_id
+    ),
+    sizes AS (
+      SELECT anime_id, COUNT(*) AS n_total
+      FROM anime_genres
+      GROUP BY anime_id
+    )
+    SELECT a.id, a.title_romaji, a.title_english, a.average_score,
+           CAST(s.n_shared AS REAL) / (? + z.n_total - s.n_shared) AS genre_score
+    FROM shared s
+    JOIN sizes z ON z.anime_id = s.anime_id
+    JOIN anime a ON a.id = s.anime_id
+    WHERE a.is_adult = 0
+    ORDER BY genre_score DESC, COALESCE(a.average_score, 0) DESC
+    LIMIT ?
+  `).all(animeId, animeId, queryCount, limit);
+}
+
+// =============================================================================
+// Signal #4 — studio match, IDF-weighted (live)
+// =============================================================================
+
+// Top-K anime sharing at least one ANIMATION studio with the query anime
+// (licensors/producers carry is_animation_studio = 0 and are excluded —
+// sharing a distributor says nothing about style).
+//
+// Score = Σ min(ln(N / df), 8) over shared studios — same IDF logic as
+// signal #2, because studio prevalence varies hugely: sharing Toei
+// (thousands of titles) is weak evidence of kinship; sharing ufotable
+// (dozens) is strong. The ceiling 8 mirrors IDF_CEILING for tags.
+function neighborsByStudio(animeId, limit = 100) {
+  const queryStudios = db.prepare(`
+    SELECT ast.studio_id
+    FROM anime_studios ast
+    JOIN studios s ON s.id = ast.studio_id
+    WHERE ast.anime_id = ? AND s.is_animation_studio = 1
+  `).all(animeId).map((r) => r.studio_id);
+
+  if (queryStudios.length === 0) return [];
+
+  const N = db.prepare('SELECT COUNT(*) AS n FROM anime WHERE is_adult = 0').get().n || 1;
+  const placeholders = queryStudios.map(() => '?').join(',');
+
+  return db.prepare(`
+    WITH df AS (
+      SELECT ast.studio_id, COUNT(DISTINCT ast.anime_id) AS df
+      FROM anime_studios ast
+      WHERE ast.studio_id IN (${placeholders})
+      GROUP BY ast.studio_id
+    )
+    SELECT a.id, a.title_romaji, a.title_english, a.average_score,
+           SUM(min(ln(CAST(? AS REAL) / df.df), 8.0)) AS studio_score
+    FROM anime_studios ast
+    JOIN df ON df.studio_id = ast.studio_id
+    JOIN anime a ON a.id = ast.anime_id
+    WHERE ast.anime_id != ?
+      AND a.is_adult = 0
+    GROUP BY a.id
+    ORDER BY studio_score DESC, COALESCE(a.average_score, 0) DESC
+    LIMIT ?
+  `).all(...queryStudios, N, animeId, limit);
+}
+
+// =============================================================================
+// Signals #5 / #6 / #8 — categorical refiners (era, episodes, format)
+// =============================================================================
+
+// Era (#5): triangular decay over two decades. Same year scores 1, each
+// year of distance costs 0.05, twenty-plus years apart scores 0. Plain
+// English: a 1998 and a 2003 anime share an era (0.75); a 1998 and a
+// 2024 anime do not (0).
+function eraScore(yearA, yearB) {
+  if (yearA == null || yearB == null) return 0;
+  return Math.max(0, 1 - Math.abs(yearA - yearB) / 20);
+}
+
+// Episodes (#6): compare commitment-size buckets, not raw counts — the
+// difference between 12 and 13 episodes is nothing, the difference
+// between 12 and 500 is the whole viewing experience.
+//   0: single (1)        — movies, one-shot OVAs
+//   1: mini (2-7)        — short OVA series
+//   2: one cour (8-13)
+//   3: two cour (14-26)
+//   4: long (27-64)      — year-ish runs
+//   5: epic (65+)        — One Piece territory
+// Same bucket = 1, adjacent = 0.5, further = 0.
+function episodeBucket(n) {
+  if (n == null || n <= 0) return null;
+  if (n === 1) return 0;
+  if (n <= 7) return 1;
+  if (n <= 13) return 2;
+  if (n <= 26) return 3;
+  if (n <= 64) return 4;
+  return 5;
+}
+
+function episodesScore(epsA, epsB) {
+  const a = episodeBucket(epsA);
+  const b = episodeBucket(epsB);
+  if (a === null || b === null) return 0;
+  const d = Math.abs(a - b);
+  return d === 0 ? 1 : d === 1 ? 0.5 : 0;
+}
+
+// Format (#8): exact match = 1; "sibling" formats = 0.5. TV and ONA are
+// both episodic series (ONA is just the streaming-native label); OVA and
+// SPECIAL are both side-content. MOVIE stands alone.
+const FORMAT_SIBLINGS = { TV: 'ONA', ONA: 'TV', OVA: 'SPECIAL', SPECIAL: 'OVA' };
+
+function formatScore(fmtA, fmtB) {
+  if (!fmtA || !fmtB) return 0;
+  if (fmtA === fmtB) return 1;
+  return FORMAT_SIBLINGS[fmtA] === fmtB ? 0.5 : 0;
+}
+
+// Batch-fetch the categorical fields for the query anime + all candidates,
+// then score each candidate against the query. Returns Map<id, {era,
+// episodes, format}> with every score already in [0, 1] — no min-max
+// needed at merge time (unlike generator scores, these are absolute).
+function categoricalScores(animeId, candidateIds) {
+  const out = new Map();
+  if (candidateIds.length === 0) return out;
+
+  const q = db.prepare(
+    'SELECT season_year, episodes, format FROM anime WHERE id = ?'
+  ).get(animeId);
+  if (!q) return out;
+
+  const placeholders = candidateIds.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT id, season_year, episodes, format
+    FROM anime WHERE id IN (${placeholders})
+  `).all(...candidateIds);
+
+  for (const r of rows) {
+    out.set(r.id, {
+      era:      eraScore(q.season_year, r.season_year),
+      episodes: episodesScore(q.episodes, r.episodes),
+      format:   formatScore(q.format, r.format),
+    });
+  }
+  return out;
+}
+
+// =============================================================================
 // Multi-signal merge — combine per-signal candidate lists into one ranking
 // =============================================================================
 
@@ -334,8 +528,16 @@ function minMaxNormalize(rows, scoreKey) {
 // An anime that surfaces in only one signal gets that signal's weighted score
 // and 0 for the missing ones. This naturally biases toward "appears in
 // multiple signals" — the candidates we're most confident about.
+//
+// opts.refineFor: query anime id. When set, the era/episodes/format
+// refiners (#5/#6/#8) score every pooled candidate against the query
+// anime and their weighted scores adjust the ranking BEFORE the final
+// sort + slice. Refiners adjust scores but don't appear in the `signals`
+// provenance string — that string answers "which signal FOUND this."
+// opts.refiners: subset of ['era', 'episodes', 'format'] to apply
+// (defaults to all three).
 function mergeSignals(inputs, weights, opts = {}) {
-  const { limit = 10 } = opts;
+  const { limit = 10, refineFor = null, refiners = ['era', 'episodes', 'format'] } = opts;
 
   const normalized = {};
   if (inputs.synopsis) {
@@ -345,6 +547,14 @@ function mergeSignals(inputs, weights, opts = {}) {
   if (inputs.tags) {
     const withScore = inputs.tags.map((r) => ({ ...r, _score: r.tag_score }));
     normalized.tags = minMaxNormalize(withScore, '_score');
+  }
+  if (inputs.genre) {
+    const withScore = inputs.genre.map((r) => ({ ...r, _score: r.genre_score }));
+    normalized.genre = minMaxNormalize(withScore, '_score');
+  }
+  if (inputs.studio) {
+    const withScore = inputs.studio.map((r) => ({ ...r, _score: r.studio_score }));
+    normalized.studio = minMaxNormalize(withScore, '_score');
   }
 
   const merged = new Map();
@@ -367,6 +577,19 @@ function mergeSignals(inputs, weights, opts = {}) {
     }
   }
 
+  // Refinement pass — categorical scores are absolute [0, 1], so they
+  // add straight into the weighted sum without min-max normalization.
+  if (refineFor !== null && refiners.length > 0 && merged.size > 0) {
+    const cat = categoricalScores(refineFor, [...merged.keys()]);
+    for (const r of merged.values()) {
+      const c = cat.get(r.id);
+      if (!c) continue;
+      if (refiners.includes('era'))      r.score += (weights.era      || 0) * c.era;
+      if (refiners.includes('episodes')) r.score += (weights.episodes || 0) * c.episodes;
+      if (refiners.includes('format'))   r.score += (weights.format   || 0) * c.format;
+    }
+  }
+
   return [...merged.values()]
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
@@ -383,23 +606,26 @@ function mergeSignals(inputs, weights, opts = {}) {
 // Top-level recommendation entry points
 // =============================================================================
 
-// "More like this anime." Fans out to each enabled signal, normalizes,
-// weighted-sums, returns top N. Defaults to synopsis + tags (the two
-// signals wired so far). `signals` and `weights` are overridable so the
-// UI can later expose per-axis sliders.
+// "More like this anime." Fans out to each enabled generator signal,
+// normalizes, weighted-sums, applies the categorical refiners, returns
+// top N. `signals` and `weights` are overridable so the UI can later
+// expose per-axis sliders.
 function recommendFromAnime(animeId, opts = {}) {
   const {
     limit = 10,
     poolSize = 100,
-    signals = ['synopsis', 'tags'],
+    signals = ['synopsis', 'tags', 'genre', 'studio', 'era', 'episodes', 'format'],
     weights = DEFAULT_WEIGHTS,
   } = opts;
 
   const inputs = {};
   if (signals.includes('synopsis')) inputs.synopsis = neighborsBySynopsis(animeId, poolSize);
   if (signals.includes('tags'))     inputs.tags     = neighborsByTags(animeId, poolSize);
+  if (signals.includes('genre'))    inputs.genre    = neighborsByGenres(animeId, poolSize);
+  if (signals.includes('studio'))   inputs.studio   = neighborsByStudio(animeId, poolSize);
 
-  return mergeSignals(inputs, weights, { limit });
+  const refiners = ['era', 'episodes', 'format'].filter((s) => signals.includes(s));
+  return mergeSignals(inputs, weights, { limit, refineFor: animeId, refiners });
 }
 
 module.exports = {
@@ -408,6 +634,9 @@ module.exports = {
   // per-signal candidate fetchers (exposed for tests + future re-use)
   neighborsBySynopsis,
   neighborsByTags,
+  neighborsByGenres,
+  neighborsByStudio,
+  categoricalScores,
   // merge plumbing (exposed for tests + future "explain" UI)
   mergeSignals,
   minMaxNormalize,
@@ -476,6 +705,18 @@ if (require.main === module) {
   for (let i = 0; i < f.length; i++) maxDiff = Math.max(maxDiff, Math.abs(f[i] - back[i]));
   assert(maxDiff < 1e-9, 'Float32 <-> Buffer round-trip is lossless');
 
+  // Categorical refiner scoring (#5/#6/#8)
+  assert(eraScore(2000, 2000) === 1, 'era: same year = 1');
+  assert(Math.abs(eraScore(1998, 2003) - 0.75) < 1e-9, 'era: 5 years apart = 0.75');
+  assert(eraScore(1998, 2024) === 0, 'era: 26 years apart = 0');
+  assert(eraScore(null, 2020) === 0, 'era: missing year = 0');
+  assert(episodesScore(12, 13) === 1, 'episodes: 12 vs 13 same bucket = 1');
+  assert(episodesScore(12, 24) === 0.5, 'episodes: one vs two cour adjacent = 0.5');
+  assert(episodesScore(12, 500) === 0, 'episodes: cour vs epic = 0');
+  assert(formatScore('TV', 'TV') === 1, 'format: TV vs TV = 1');
+  assert(formatScore('TV', 'ONA') === 0.5, 'format: TV vs ONA siblings = 0.5');
+  assert(formatScore('TV', 'MOVIE') === 0, 'format: TV vs MOVIE = 0');
+
   console.log('\nPhase 2 — end-to-end against the live DB');
 
   const count = db.prepare(
@@ -509,11 +750,23 @@ if (require.main === module) {
     if (tags.length === 0) console.log('    (no tags on this anime)');
     for (const r of tags) console.log(`    ${r.score.toFixed(4)}  ${r.title}`);
 
-    // (c) merged — synopsis + tags weighted
+    // (c) genre only — wire just signal #3
+    const genre = recommendFromAnime(animeRow.id, { limit: 5, signals: ['genre'] });
+    console.log('  genre-only top 5:');
+    if (genre.length === 0) console.log('    (no genres on this anime — run scripts/seed-genres-from-tags.js)');
+    for (const r of genre) console.log(`    ${r.score.toFixed(4)}  ${r.title}`);
+
+    // (d) studio only — wire just signal #4
+    const studio = recommendFromAnime(animeRow.id, { limit: 5, signals: ['studio'] });
+    console.log('  studio-only top 5:');
+    if (studio.length === 0) console.log('    (no animation studio on record for this anime)');
+    for (const r of studio) console.log(`    ${r.score.toFixed(4)}  ${r.title}`);
+
+    // (e) merged — all generators + era/episodes/format refiners
     const merged = recommendFromAnime(animeRow.id, { limit: 5 });
-    console.log('  merged (synopsis + tags) top 5:');
+    console.log('  merged (all signals) top 5:');
     for (const r of merged) {
-      console.log(`    ${r.score.toFixed(4)}  [${r.signals.padEnd(13)}]  ${r.title}`);
+      console.log(`    ${r.score.toFixed(4)}  [${r.signals.padEnd(26)}]  ${r.title}`);
     }
   }
 
