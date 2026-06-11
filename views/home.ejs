@@ -119,9 +119,11 @@
           <p class="meta">by weighted community score</p>
         </div>
 
-        <% const scores = top.map((a) => a.average_score);
-           const mx = Math.max(...scores), mn = Math.min(...scores);
-           const barW = (s) => (25 + 75 * (s - mn) / ((mx - mn) || 1)).toFixed(0); %>
+        <%# Score bars are anchored to the catalog: empty = the median anime,
+            full = a perfect 10. A fixed scale, so the bar answers "how far
+            above the middle of everything does this stand?" %>
+        <% const mid = (stats && stats.scoreMedian) || 6.5;
+           const barW = (s) => Math.max(2, 100 * (s - mid) / (10 - mid)).toFixed(0); %>
 
         <div class="grid grid-cols-1 gap-px border border-paper/30 bg-paper/30 lg:grid-cols-12">
           <%# Podium panes — image takeover. All 8 render stacked; preview.js
@@ -190,7 +192,7 @@
             <% }) %>
           </ol>
         </div>
-        <p class="meta mt-3 text-right text-paper/45">score bars scaled to the list range <%= mn.toFixed(2) %>–<%= mx.toFixed(2) %> — 相対目盛</p>
+        <p class="meta mt-3 text-right text-paper/45">score bars: catalog median <%= mid.toFixed(2) %> → perfect 10 — 中央値から頂点まで</p>
       </section>
       <% } %>
 

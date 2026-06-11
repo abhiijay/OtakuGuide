@@ -1,0 +1,5 @@
+{
+  "watch": ["server.js", "src"],
+  "ext": "js,json",
+  "_comment": "Watch only server code. db/ MUST stay unwatched — background jobs (source backfill, sweeps) write checkpoints there every second, which put nodemon in a restart loop (932 restarts in one evening). EJS views re-render per request and need no restart."
+}

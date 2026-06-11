@@ -17,12 +17,19 @@ const router = express.Router();
 //                         with a handful of votes)
 // The /catalog browse view deliberately relaxes status/score — browsing
 // should show everything; ranking should stay canonical.
+// The anilist_id/mal_id clause is a PROVENANCE floor: ~9K rows exist in
+// neither major database, which means (a) the country sweep couldn't verify
+// they're Japanese (Kan Kluai, Zhu Xian donghua) and (b) their scores come
+// from one obscure source with a handful of votes (clusters of identical
+// 9.08s and flat 10.0s). Unverifiable titles stay browsable in /catalog;
+// they just can't rank on curated lists.
 const QUALITY =
   `a.is_adult = 0
    AND a.status = 'FINISHED'
    AND a.cover_image_url IS NOT NULL
    AND a.average_score IS NOT NULL
-   AND a.average_score < 9.4`;
+   AND a.average_score < 9.4
+   AND (a.anilist_id IS NOT NULL OR a.mal_id IS NOT NULL)`;
 
 // MAL serves covers in multiple sizes; the catalog stores the default
 // (~225px wide). The 'l' variant (~425px) keeps large renders sharp.
@@ -59,6 +66,20 @@ router.get('/', (req, res) => {
       )
       .all();
     top.forEach((a) => { a.cover_large = largeCover(a.cover_image_url); });
+
+    // Median score of the ranked catalog — the anchor for the podium's
+    // score bars: each bar shows where a title sits between the middle of
+    // all anime and a perfect 10 (a fixed, honest scale — the old bars
+    // min-max-stretched the 8 visible scores, exaggerating hairline gaps).
+    if (stats) {
+      stats.scoreMedian = db
+        .prepare(
+          `SELECT average_score FROM anime a WHERE ${QUALITY}
+           ORDER BY average_score
+           LIMIT 1 OFFSET (SELECT COUNT(*) FROM anime a WHERE ${QUALITY}) / 2`
+        )
+        .get().average_score;
+    }
 
     // Content rails for the dark act. Genre rails replace/join these once the
     // genre backfill lands; until then we rail on format, era, and tags.
