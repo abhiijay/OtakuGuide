@@ -16,7 +16,11 @@ import wholesale.**
 
 ## Current state (last updated 2026-06-10, post-pivot)
 
-**The import is COMPLETE (2026-06-12) and the site is a working product.** Full catalog (40,921 titles, ~25.9K with synopsis vectors, 35.9K relations) is browsable: home (three-act poster), `/catalog` (search + format/era/tag filters + pagination), `/anime/:id` (profile + live 赤い糸 recommendations from signals 01+02), `/how-it-works` (plain-English recommender docs). Routes live in `src/routes/pages.js` (locked three-file architecture started). Remaining pre-auth data work: genre backfill (signal 03), country sweep (donghua strays like Kan Kluai slipped the JP filter).
+**The import is COMPLETE (2026-06-12) and the site is a working product.** Full catalog (~40.6K titles after sweep, ~25.9K with synopsis vectors, 35.9K relations) is browsable: home (three-act poster), `/catalog` (search + format/genre/era/tag filters + pagination), `/anime/:id` (profile + live 赤い糸 recommendations with a story↔tags weight slider), `/discover` (serendipity mode: random quality seed + shuffled top-40 thread + 再抽選 reroll), `/how-it-works` (plain-English recommender docs). Cross-document view transitions (brush-wipe) between pages. Routes live in `src/routes/pages.js` (locked three-file architecture started).
+
+**Background jobs launched 2026-06-12 night:** `scripts/sweep-country.js` (AniList countryOfOrigin verification — DELETES non-JP strays like Kan Kluai/Release That Witch, flags adult, JSONL report at `db/country-sweep-report.jsonl`; ~15 min) and `scripts/backfill-source.js` (signal #7 `anime.source` via Jikan, ~4.5h, resumable). NOTE: a Jikan GENRE crawl was attempted and abandoned — MAL genre ids collide with our seeded genre table ids (corrupted rows 1–8 were purged and reseeded); genres come from `seed-genres-from-tags.js` only. After the source backfill completes: wire signal #7 + #4/#5/#6/#8 into the recommender, add a source filter to catalog, re-run `npm run enrich:art` (sweep may have changed top lists).
+
+**Signal #3 (genre) is LIVE (2026-06-12).** No Jikan backfill was needed: the offline-database had merged each source's genre list into the tag namespace, so `scripts/seed-genres-from-tags.js` seeds `genres`/`anime_genres` from existing `anime_tags` rows instantly — 18 canonical genres (AniList's list, alias-map spellings), 82.4% catalog coverage including the ~10.7K no-mal_id entries Jikan could never serve. `neighborsByGenres()` in `src/recommender.js` scores Jaccard overlap (bounded, punishes genre-spam, deliberately a different opinion-shape than tag TF-IDF), ties break toward higher rating. `recommendFromAnime` now defaults to `['synopsis', 'tags', 'genre']`. Smoke-tested: Trigun + Badlands Rumble entered Bebop's top 5 as `[synopsis+tags+genre]`. A Jikan genre crawl remains possible later as a *refinement* pass (MAL's curated per-anime genres are slightly cleaner) but blocks nothing. `src/jikan.js` now also extracts `genres` (and `source`, signal #7 prep) for any future fetch.
 
 **Repository:** https://github.com/abhiijay/OtakuGuide (public, branch `main`).
 
@@ -108,11 +112,11 @@ The import will complete around 14:00. The clean sequence after that:
    ```
    Expect ~32,000-34,000 with vectors (40,921 candidates minus the ~20% miss rate).
 
-2. **Fix `src/jikan.js` to extract genres.** Add a `genres: (d.genres || []).map(...)` line to the return shape. ~3 line change. Update `scripts/import-anime.js` to insert genres into `genres` + `anime_genres` (same INSERT OR IGNORE pattern as themes/demographics).
+2. ~~**Fix `src/jikan.js` to extract genres.**~~ **DONE 2026-06-12** — `fetchAnime` now returns `genres` (+ `source` for signal #7).
 
-3. **Write a genre-backfill script** — `scripts/backfill-genres.js`. Hits Jikan only for rows with `mal_id IS NOT NULL`; extracts just the `genres` array; runs ~700ms per call → ~8 hours for 40K anime. Resumable via `WHERE NOT EXISTS (SELECT 1 FROM anime_genres WHERE anime_id = a.id)`. Can run unattended in parallel with other work.
+3. ~~**Write a genre-backfill script.**~~ **OBSOLETED 2026-06-12** — genres were already in the DB hiding in the tag namespace; `scripts/seed-genres-from-tags.js` seeds them instantly with better coverage (82.4%) than a 6-hour Jikan crawl could reach (≤74%). A Jikan crawl is now optional refinement only.
 
-4. **Once genre data lands, wire signal #3** in `src/recommender.js`. Pattern follows signal #2 — `neighborsByGenres(animeId, limit)` returns cosine on one-hot vectors over the ~20-genre space, then `mergeSignals` already handles the rest via the existing min-max + weighted-sum path.
+4. ~~**Wire signal #3.**~~ **DONE 2026-06-12** — `neighborsByGenres()` via genre-set Jaccard (not one-hot cosine; bounded [0,1], resists genre-spam, and avoids double-counting signal #2 which already TF-IDFs the same names). See "Signal #3" status block under Current state.
 
 5. **Then wire signals #4 (studio), #5 (era), #6 (episodes), #8 (format)** — all have data ready right now. Each is one function + one mergeSignals branch + smoke test update. ~30-50 lines each.
 
