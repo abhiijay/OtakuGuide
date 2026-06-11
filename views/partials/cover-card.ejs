@@ -1,0 +1,21 @@
+<%# Cover card — linked poster with hover stats. Used by the catalog grid,
+    detail-page recommendations, and related rows (the home rails keep their
+    own larger markup). Locals:
+      a    — anime row: id, title_romaji, cover_large/cover_image_url,
+             season_year, format, episodes?, average_score?
+      dark — true inside .dark-act sections (border/text palette flips) %>
+<% var onDark = typeof dark !== 'undefined' && dark; %>
+<a href="/anime/<%= a.id %>" class="group block">
+  <div class="cover-lift relative aspect-[2/3] overflow-hidden border <%= onDark ? 'border-paper/20' : 'border-ink/20' %>">
+    <img src="<%= a.cover_large || a.cover_image_url %>" alt="" loading="lazy" decoding="async"
+      class="cover-img h-full w-full"
+      onerror="this.onerror=null;this.src='<%= a.cover_image_url %>'" />
+    <div class="absolute inset-0 flex flex-col justify-end bg-night/85 p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+      <% if (a.average_score != null) { %>
+      <p class="font-serif text-2xl font-extrabold tracking-tight text-sakura tabular-nums"><%= a.average_score.toFixed(2) %></p>
+      <% } %>
+      <p class="meta mt-1 text-paper/80"><%= [a.season_year, a.format, a.episodes ? a.episodes + ' ep' : null].filter(Boolean).join(' · ') %></p>
+    </div>
+  </div>
+  <p class="mt-2 line-clamp-2 font-serif text-sm font-bold leading-snug <%= onDark ? '' : 'text-ink' %>"><%= a.title_romaji %></p>
+</a>

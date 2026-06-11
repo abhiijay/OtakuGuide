@@ -1,3 +1,346 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   OtakuGuide design language: "Japanese-Swiss poster" in light + dark acts
+   (locked 2026-06-12). Paper hero → ink content act → paper colophon.
+   One type system, one red, hard cuts between acts. All motion is native CSS
+   (no animation libraries) and respects prefers-reduced-motion.
+   Every class below exists because a view uses it — no just-in-case CSS.
+--------------------------------------------------------------------------- */
+
+@layer base {
+  ::selection {
+    @apply bg-sakura text-paper;
+  }
+
+  body {
+    /* Faint paper grain — scoped to body background, not a global filter. */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  }
+
+  /* Keyboard users get the same premium the mouse gets. */
+  :focus-visible {
+    outline: 2px solid theme('colors.sakura.DEFAULT');
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Mono metadata strip — dates, counts, coordinates. */
+  .meta {
+    @apply font-mono text-[0.65rem] uppercase tracking-[0.18em] text-ink/70;
+  }
+
+  /* Vertical text rail (tategaki). */
+  .tate {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+  }
+
+  /* Subtitle pattern — 字幕. Japanese display text above (bold, often red),
+     this line directly beneath like an anime subtitle. Tiered application:
+     display moments only — small metadata Japanese stays inline texture. */
+  .jp-sub {
+    @apply mt-1 block font-sans text-[0.7rem] tracking-[0.08em] text-ink/60;
+  }
+
+  /* Dark act — sections wrapped in .dark-act invert to ink. Same grammar,
+     paper-colored type. Only the shared components need overrides here;
+     layout markup uses paper/* utilities directly. */
+  .dark-act .meta {
+    @apply text-paper/65;
+  }
+  .dark-act .jp-sub {
+    @apply text-paper/60;
+  }
+
+  /* Registration mark — print-proof crosshair at frame corners. */
+  .regmark {
+    @apply absolute h-3 w-3;
+  }
+  .regmark::before,
+  .regmark::after {
+    content: '';
+    @apply absolute bg-ink/60;
+  }
+  .regmark::before {
+    @apply left-1/2 top-0 h-full w-px -translate-x-1/2;
+  }
+  .regmark::after {
+    @apply top-1/2 left-0 w-full h-px -translate-y-1/2;
+  }
+
+  /* Nav tab — black/white in repose, sakura on hover/active (locked rule). */
+  .nav-tab {
+    @apply relative pb-1 font-mono text-[0.7rem] uppercase tracking-[0.18em] text-ink transition-colors duration-200;
+  }
+  .nav-tab::after {
+    content: '';
+    @apply absolute bottom-0 left-0 h-[2px] w-full origin-left scale-x-0 bg-sakura transition-transform duration-300;
+  }
+  .nav-tab:hover,
+  .nav-tab[aria-current='page'] {
+    @apply text-sakura;
+  }
+  .nav-tab:hover::after,
+  .nav-tab[aria-current='page']::after {
+    @apply scale-x-100;
+  }
+  /* Tabs for routes that don't exist yet — visibly inert, never fake links. */
+  .nav-tab-soon {
+    @apply cursor-default text-ink/35;
+  }
+  .nav-tab-soon:hover {
+    @apply text-ink/35;
+  }
+  .nav-tab-soon:hover::after {
+    @apply scale-x-0;
+  }
+
+  /* Anime cover art — always full color. In the dark act, a whisper of
+     extra saturation/contrast makes the art glow against the night. */
+  .cover-img {
+    @apply object-cover;
+  }
+  .dark-act .cover-img {
+    filter: saturate(1.06) contrast(1.03);
+  }
+
+  /* Film grain over podium art — unifies mixed-resolution sources and makes
+     softness read as texture, not failed sharpness. Same noise SVG as the
+     body paper grain. */
+  .grain-overlay {
+    pointer-events: none;
+    mix-blend-mode: overlay;
+    opacity: 0.5;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  }
+
+  /* Cover hover: lift + ink shadow on paper, sakura glow in the dark act. */
+  .cover-lift {
+    @apply transition-all duration-200 ease-out;
+  }
+  .cover-lift:hover {
+    @apply -translate-y-1 shadow-[6px_10px_24px_-10px_rgba(22,18,15,0.45)];
+  }
+  .dark-act .cover-lift:hover {
+    @apply shadow-[0_10px_32px_-8px_rgba(224,60,66,0.5)];
+  }
+
+  /* Podium preview pane cross-fade (re-triggered by preview.js on swap). */
+  .pane-anim {
+    animation: pane-fade 0.2s ease-out both;
+  }
+
+  /* Ken Burns — the podium takeover image drifts slowly, like a film still. */
+  .pane-kenburns {
+    animation: kenburns 14s ease-in-out infinite alternate;
+  }
+  @keyframes kenburns {
+    from {
+      transform: scale(1);
+    }
+    to {
+      transform: scale(1.07) translateY(-1.5%);
+    }
+  }
+
+  /* Poster surgery — outline-only display type (the OTAKU/GUIDE split). */
+  .type-outline {
+    -webkit-text-stroke: 0.035em theme('colors.ink');
+    color: transparent;
+  }
+  .type-outline-paper {
+    -webkit-text-stroke: 0.025em rgba(251, 251, 249, 0.55);
+    color: transparent;
+  }
+
+  /* Crop display type off the viewport's left edge (poster aggression).
+     On wide screens the calc pulls past the container margin to the edge;
+     on small screens min() keeps just a subtle overhang. */
+  .crop-left {
+    margin-left: min(-0.04em, calc((72rem - 100vw) / 2 - 0.04em));
+  }
+
+  /* Thread marquee — CSS-only infinite scroll at the act boundary.
+     Track holds two identical halves; translating -50% loops seamlessly. */
+  .marquee {
+    @apply overflow-hidden;
+  }
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee 32s linear infinite;
+  }
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* Enso window — cover art masked inside a rough brush circle.
+     The mask is a filled circle run through turbulence displacement,
+     matching the enso partial's ragged ink edges. */
+  .enso-mask {
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='m'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.045' numOctaves='3' seed='7'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='16'/%3E%3C/filter%3E%3Ccircle cx='200' cy='200' r='168' fill='%23fff' filter='url(%23m)'/%3E%3C/svg%3E");
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='m'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.045' numOctaves='3' seed='7'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='16'/%3E%3C/filter%3E%3Ccircle cx='200' cy='200' r='168' fill='%23fff' filter='url(%23m)'/%3E%3C/svg%3E");
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+  }
+
+  /* Rails scroll without a visible scrollbar (user call 2026-06-12 — the
+     red thumb didn't look clean). The rails revolve infinitely instead
+     (public/js/rails.js), so there's no meaningful scroll position to show. */
+  .rail-scroll {
+    scrollbar-width: none;
+  }
+  .rail-scroll::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer utilities {
+  /* Page-load stagger: children of .reveal rise in sequence. */
+  .reveal > * {
+    animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .reveal > *:nth-child(1) { animation-delay: 0.05s; }
+  .reveal > *:nth-child(2) { animation-delay: 0.15s; }
+  .reveal > *:nth-child(3) { animation-delay: 0.25s; }
+  .reveal > *:nth-child(4) { animation-delay: 0.35s; }
+  .reveal > *:nth-child(5) { animation-delay: 0.45s; }
+  .reveal > *:nth-child(6) { animation-delay: 0.55s; }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pane-fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  /* Enso draws itself on load. pathLength="1" on the body path normalizes
+     its length, so dasharray/dashoffset of 1 = the full stroke. The two
+     dry-brush streak paths keep their texture dasharrays and just fade in
+     after the body finishes. */
+  .enso-draw {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: enso-draw 0.9s ease-out 0.15s both;
+  }
+  .enso-streaks {
+    opacity: 0;
+    animation: enso-fade 0.5s ease-out 1.05s both;
+  }
+  @keyframes enso-draw {
+    to { stroke-dashoffset: 0; }
+  }
+  @keyframes enso-fade {
+    to { opacity: 1; }
+  }
+
+  /* The enso turns forever — the circle being drawn without end. */
+  .enso-spin {
+    transform-origin: 50% 50%;
+    animation: enso-spin 16s linear infinite;
+  }
+  @keyframes enso-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Scroll choreography — native scroll-driven animations where supported;
+     intro.js mirrors these with IntersectionObserver/scroll fallbacks for
+     browsers without animation-timeline (e.g. older Safari). */
+  .scroll-thread {
+    transform-origin: top;
+  }
+  /* JS fallback states (added by intro.js only when needed). */
+  .js-rise {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .js-rise-in {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  @supports (animation-timeline: scroll()) {
+    /* 運命の赤い糸 — the red thread extends down the gutter as you scroll. */
+    .scroll-thread {
+      animation: thread-grow linear both;
+      animation-timeline: scroll();
+    }
+    /* Below-fold sections rise as they enter the viewport. */
+    .view-rise {
+      animation: view-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 45%;
+    }
+    /* The giant 桜 drifts slowly against the scroll. */
+    .kanji-drift {
+      animation: kanji-drift linear both;
+      animation-timeline: scroll();
+    }
+  }
+  @keyframes thread-grow {
+    from { transform: scaleY(0); }
+    to   { transform: scaleY(1); }
+  }
+  @keyframes view-rise {
+    from {
+      opacity: 0;
+      transform: translateY(26px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes kanji-drift {
+    to { transform: translateY(-90px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal > * {
+      animation: none;
+    }
+    .enso-draw {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+    .enso-streaks {
+      animation: none;
+      opacity: 1;
+    }
+    .scroll-thread,
+    .view-rise,
+    .kanji-drift,
+    .pane-anim,
+    .pane-kenburns,
+    .enso-spin,
+    .marquee-track {
+      animation: none;
+    }
+    .js-rise {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+}

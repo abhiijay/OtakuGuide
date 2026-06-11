@@ -1,0 +1,136 @@
+<%# Anime detail — the profile poster. Receives from pages.js:
+      a       — full anime row (+ cover_large)
+      tags    — [name], studios — [name]
+      related — [{id, title_romaji, cover_large, ...}]
+      recs    — [{id, title_romaji, cover_large, match, signals, ...}]
+                from the live recommender (signals 01+02) %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head', { title: a.title_romaji }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('partials/frame') %>
+  <%- include('partials/nav') %>
+
+  <main>
+    <%# ——— Dark hero: ambient art + framed cover + title stack ——— %>
+    <section class="dark-act relative overflow-hidden border-b border-night bg-night text-paper">
+      <img src="<%= a.banner_image_url || a.cover_image_xl || a.cover_large %>" alt="" aria-hidden="true" decoding="async"
+        class="absolute inset-0 h-full w-full scale-110 object-cover opacity-30 blur-2xl" />
+      <div class="grain-overlay absolute inset-0" aria-hidden="true"></div>
+
+      <div class="reveal relative mx-auto grid max-w-6xl grid-cols-1 gap-10 px-6 py-14 sm:grid-cols-[auto,1fr] sm:py-16">
+        <div class="mx-auto sm:mx-0">
+          <img src="<%= a.cover_image_xl || a.cover_large %>" alt="" decoding="async" fetchpriority="high"
+            class="cover-img w-56 border border-paper/25 shadow-[0_24px_60px_-18px_rgba(0,0,0,0.85)] sm:w-64"
+            onerror="this.onerror=null;this.src='<%= a.cover_image_url %>'" />
+        </div>
+        <div class="min-w-0">
+          <p class="meta">［作品］ work file — <%= [a.format, a.status ? a.status.toLowerCase() : null].filter(Boolean).join(' · ') %></p>
+          <h1 class="mt-4 font-serif text-4xl font-extrabold leading-tight tracking-tight text-balance sm:text-5xl"><%= a.title_romaji %></h1>
+          <% if (a.title_english || a.title_native) { %>
+          <p class="jp-sub mt-2 text-sm"><%= [a.title_native, a.title_english].filter(Boolean).join(' — ') %></p>
+          <% } %>
+
+          <div class="mt-7 flex flex-wrap items-center gap-x-8 gap-y-3">
+            <% if (a.average_score != null) { %>
+            <p class="font-serif text-5xl font-extrabold tracking-tight text-sakura tabular-nums"><%= a.average_score.toFixed(2) %></p>
+            <% } %>
+            <dl class="meta grid grid-cols-2 gap-x-8 gap-y-1.5 sm:grid-cols-3">
+              <% const specs = [
+                ['year', a.season_year],
+                ['episodes', a.episodes],
+                ['per ep', a.duration_minutes ? a.duration_minutes + ' min' : null],
+                ['season', a.season ? a.season.toLowerCase() : null],
+                ['studio', studios.length ? studios.slice(0, 2).join(', ') : null],
+                ['source', a.source ? a.source.toLowerCase() : null],
+              ].filter((s) => s[1] != null); %>
+              <% specs.forEach((s) => { %>
+              <div><dt class="inline text-paper/45"><%= s[0] %> —</dt> <dd class="inline text-paper/90"><%= s[1] %></dd></div>
+              <% }) %>
+            </dl>
+          </div>
+
+          <% if (tags.length) { %>
+          <div class="mt-7 flex flex-wrap gap-2">
+            <% tags.forEach((t) => { %>
+            <a href="/catalog?tag=<%= encodeURIComponent(t) %>" class="meta border border-paper/25 px-2 py-1 transition-colors hover:border-sakura hover:text-sakura"><%= t %></a>
+            <% }) %>
+          </div>
+          <% } %>
+        </div>
+      </div>
+    </section>
+
+    <%# ——— Synopses — both sources, attributed ——— %>
+    <% if (a.synopsis_mal || a.synopsis_wiki) { %>
+    <section class="mx-auto max-w-6xl px-6 py-12">
+      <h2>
+        <span class="font-serif text-3xl font-extrabold tracking-tight">梗概</span>
+        <span class="jp-sub">kougai — synopsis</span>
+      </h2>
+      <% if (a.synopsis_mal) { %>
+      <p class="mt-6 max-w-3xl whitespace-pre-line text-[15px] leading-relaxed text-ink/85"><%= a.synopsis_mal %></p>
+      <p class="meta mt-3">source — myanimelist via jikan</p>
+      <% } %>
+      <% if (a.synopsis_wiki) { %>
+      <details class="mt-6 max-w-3xl border-t border-ink/15 pt-5">
+        <summary class="nav-tab inline-block cursor-pointer">the encyclopedic version — wikipedia plot</summary>
+        <p class="mt-4 whitespace-pre-line text-[15px] leading-relaxed text-ink/85"><%= a.synopsis_wiki %></p>
+        <p class="meta mt-3">source — wikipedia, cc by-sa 4.0</p>
+      </details>
+      <% } %>
+    </section>
+    <% } %>
+
+    <%# ——— 赤い糸 — the red thread: live recommendations ——— %>
+    <% if (recs.length) { %>
+    <section class="dark-act relative overflow-hidden border-y border-night bg-night py-14 text-paper">
+      <span class="pointer-events-none absolute -right-8 -top-8 select-none font-serif text-[14rem] font-extrabold leading-none text-paper/[0.04]" aria-hidden="true">糸</span>
+      <div class="relative mx-auto max-w-6xl px-6">
+        <div class="mb-8 flex items-end justify-between gap-4">
+          <h2>
+            <span class="relative inline-block font-serif text-3xl font-extrabold tracking-tight">
+              <span class="absolute -inset-x-4 -inset-y-1.5 -rotate-2 bg-sakura" aria-hidden="true"></span>
+              <span class="relative text-paper">赤い糸</span>
+            </span>
+            <span class="jp-sub mt-3">akai ito — the red thread · more like this</span>
+          </h2>
+          <a href="/how-it-works" class="nav-tab hidden text-paper sm:block">how this works</a>
+        </div>
+        <div class="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 lg:grid-cols-6">
+          <% recs.forEach((r) => { %>
+          <div>
+            <%- include('partials/cover-card', { a: r, dark: true }) %>
+            <p class="meta mt-1 text-paper/45">matched on <%= r.signals.replace('synopsis', 'story').replace('+', ' + ') %></p>
+          </div>
+          <% }) %>
+        </div>
+      </div>
+    </section>
+    <% } %>
+
+    <%# ——— Relations — the same franchise ——— %>
+    <% if (related.length) { %>
+    <section class="mx-auto max-w-6xl px-6 py-12">
+      <h2>
+        <span class="font-serif text-3xl font-extrabold tracking-tight">関係</span>
+        <span class="jp-sub">kankei — related works · same franchise</span>
+      </h2>
+      <div class="mt-6 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 lg:grid-cols-8">
+        <% related.forEach((r) => { %>
+        <%- include('partials/cover-card', { a: r, dark: false }) %>
+        <% }) %>
+      </div>
+    </section>
+    <% } %>
+
+    <div class="mx-auto max-w-6xl px-6 pb-12">
+      <a href="/catalog" class="nav-tab">← back to the catalog — 目録へ</a>
+    </div>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>

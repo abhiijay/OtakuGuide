@@ -1,0 +1,33 @@
+<%# Brush-stroke enso mark.
+    Three concentric arcs (body + two dry-brush streaks with dash gaps) run
+    through a turbulence displacement filter — that's what makes the edges
+    ragged like real ink instead of a geometric circle.
+    Include with: include('enso', { id: 'nav', cls: 'h-9 w-9', color: '#E03C42', draw: true, line: '#16120F' })
+    `id` must be unique per page instance (SVG filter ids are global).
+    `draw: true` makes the stroke draw itself on load (nav uses it; footer doesn't).
+    `line` (optional) threads a thin contrasting line through the middle of
+    the body stroke — the two-tone enso (user request 2026-06-12). %>
+<% var doDraw = typeof draw !== 'undefined' && draw; %>
+<% var lineColor = typeof line !== 'undefined' ? line : null; %>
+<svg viewBox="0 0 48 48" class="<%= cls %>" role="img" aria-label="OtakuGuide enso">
+  <defs>
+    <filter id="enso-rough-<%= id %>" x="-15%" y="-15%" width="130%" height="130%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.42" numOctaves="4" seed="11" result="n" />
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" />
+    </filter>
+  </defs>
+  <g filter="url(#enso-rough-<%= id %>)" fill="none" stroke="<%= color %>" stroke-linecap="round">
+    <path class="<%= doDraw ? 'enso-draw' : '' %>" pathLength="1"
+      d="M 37.8 11.8 A 17.4 17.4 0 1 0 42 28.2" stroke-width="6.2" />
+    <% if (lineColor) { %>
+    <path class="<%= doDraw ? 'enso-draw' : '' %>" pathLength="1"
+      d="M 37.8 11.8 A 17.4 17.4 0 1 0 42 28.2" stroke-width="1.6" stroke="<%= lineColor %>" />
+    <% } %>
+    <g class="<%= doDraw ? 'enso-streaks' : '' %>">
+      <path d="M 38.9 10.9 A 18.8 18.8 0 1 0 43.4 28.5" stroke-width="2"
+        opacity="0.6" stroke-dasharray="14 2 24 1.5 18 2.5 30" />
+      <path d="M 36.5 12.9 A 15.8 15.8 0 1 0 40.4 27.7" stroke-width="1.4"
+        opacity="0.45" stroke-dasharray="3 2 26 1.5 16 2 22" />
+    </g>
+  </g>
+</svg>

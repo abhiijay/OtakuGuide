@@ -8,16 +8,22 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Sakura red — the single accent. Starting value, refine when designing pages.
-        // Range we committed to: #DC143C – #E03C42
+        // Sakura red — LOCKED 2026-06-11 at the warm vermillion end of the
+        // committed #DC143C–#E03C42 range, matching the riso-print reds in
+        // the design-inspiration set. `deep` is the pressed/hover state.
         sakura: {
-          DEFAULT: '#DC143C',
+          DEFAULT: '#E03C42',
+          deep: '#B41E2B',
         },
-        ink: '#0a0a0a',
-        paper: '#fafaf7',
+        // Warm ink on near-white paper (user feedback 2026-06-11: whitish, not cream).
+        ink: '#16120F',
+        // Dark-act background — neutral deep black (user feedback 2026-06-12:
+        // warm ink read muddy-brown as a background; keep ink for text/borders).
+        night: '#0B0B0D',
+        paper: '#FBFBF9',
       },
       fontFamily: {
-        // Headings — self-hosted Shippori Mincho added later in public/fonts/
+        // Display — self-hosted Shippori Mincho (public/fonts/, weights 500 + 800)
         serif: ['"Shippori Mincho"', 'Georgia', 'serif'],
         // Body — system stack
         sans: [

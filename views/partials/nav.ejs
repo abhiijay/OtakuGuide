@@ -1,0 +1,35 @@
+<%# Site chrome: micro-type ticker strip + masthead nav.
+    `active` local marks the current tab ('home' | 'catalog' | 'docs' | '').
+    Tabs for routes that don't exist yet render as inert .nav-tab-soon spans —
+    they become real <a> links the same commit their route ships. %>
+<% var act = typeof active !== 'undefined' ? active : ''; %>
+<div class="hidden border-b border-ink/80 sm:block">
+  <div class="meta mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-1.5">
+    <span>OtakuGuide — vol.01</span>
+    <span>アニメ追跡＋推薦</span>
+    <span class="hidden md:inline">35°42′08″N 139°46′27″E</span>
+    <span class="hidden lg:inline">est. 2026 — tokyo / localhost</span>
+    <span class="text-sakura">桜</span>
+  </div>
+</div>
+<header class="border-b border-ink/80 bg-paper">
+  <nav class="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4">
+    <a href="/" class="group flex items-center gap-3">
+      <%- include('enso', { id: 'nav', cls: 'enso-spin h-10 w-10', color: '#E03C42', draw: true, line: '#16120F' }) %>
+      <span class="flex items-baseline gap-2">
+        <span class="font-serif text-xl font-extrabold tracking-tight">OtakuGuide</span>
+        <span class="meta hidden sm:inline">オタクガイド</span>
+      </span>
+    </a>
+    <div class="flex items-center gap-6">
+      <a href="/" <%- act === 'home' ? 'aria-current="page"' : '' %> class="nav-tab">Home</a>
+      <a href="/catalog" <%- act === 'catalog' ? 'aria-current="page"' : '' %> class="nav-tab">Catalog</a>
+      <span class="nav-tab nav-tab-soon" title="Coming soon">Discover</span>
+      <span class="nav-tab nav-tab-soon hidden sm:inline" title="Coming soon">Library</span>
+      <span class="hidden items-baseline gap-2 border-l border-ink/30 pl-6 md:flex">
+        <span class="font-serif text-lg font-extrabold leading-none">No.001</span>
+        <span class="meta">2026.06</span>
+      </span>
+    </div>
+  </nav>
+</header>

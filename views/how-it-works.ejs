@@ -1,0 +1,97 @@
+<%# How it works — plain-English docs for the recommender. Static content;
+    the statuses mirror the signals grid on the home page (keep in sync). %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head', { title: 'How it works' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('partials/frame') %>
+  <%- include('partials/nav') %>
+
+  <main class="relative mx-auto max-w-6xl overflow-hidden px-6 py-12">
+    <span class="pointer-events-none absolute -right-10 top-6 select-none font-serif text-[15rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">仕</span>
+
+    <div class="reveal relative">
+      <h1>
+        <span class="relative inline-block font-serif text-4xl font-extrabold tracking-tight">
+          <span class="absolute -inset-x-4 -inset-y-1.5 rotate-1 bg-sakura" aria-hidden="true"></span>
+          <span class="relative text-paper">仕組み</span>
+        </span>
+        <span class="jp-sub mt-3">shikumi — how your recommendations are made</span>
+      </h1>
+
+      <div class="mt-10 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          OtakuGuide doesn't guess from genres alone. Every anime's synopsis —
+          from two independent sources, MyAnimeList's fan-prose and Wikipedia's
+          encyclopedic plot section — is converted into a <strong>384-number
+          fingerprint</strong> (an <em>embedding</em>) by a small language model
+          running locally. Anime that <em>mean</em> similar things end up with
+          similar fingerprints, even when they share no tags at all.
+        </p>
+        <p>
+          When you open an anime's page, the engine measures the angle between
+          its fingerprint and all <span class="tabular-nums">40,000+</span>
+          others (<em>cosine similarity</em> — closer angle, closer story).
+          That's signal 01. Signal 02 compares community tags, weighted so
+          rare, specific tags ("iyashikei", "time loop") count far more than
+          ubiquitous ones ("action"). Each signal votes, the votes are
+          normalized to a common scale, and a weighted sum produces the final
+          ranking — the <span class="text-sakura">赤い糸</span> list you see.
+        </p>
+        <p>
+          Every recommendation says which signals matched — if it can't explain
+          itself, it doesn't ship. Ten more signals join the merge as their
+          data lands; same math, more voters.
+        </p>
+      </div>
+
+      <%# ——— The twelve, with honest status ——— %>
+      <h2 class="mt-14">
+        <span class="font-serif text-3xl font-extrabold tracking-tight">十二の信号</span>
+        <span class="jp-sub">juuni no shingou — the twelve signals</span>
+      </h2>
+
+      <% const signals = [
+        ['synopsis embedding', 'live', 'The headline signal. Both synopses embedded, averaged, compared by cosine similarity — matches stories by meaning, not keywords.'],
+        ['tag tf-idf', 'live', 'Community tags weighted by rarity (TF-IDF), with 49 alias rules so "sci-fi" and "science fiction" count as one tag, not two strangers.'],
+        ['genre one-hot', 'data gap', 'Classic categorical matching. Blocked until the genre backfill runs — the offline database merges genres into tags, so genres come from Jikan.'],
+        ['studio', 'ready', 'ufotable, KyoAni and MAPPA each cluster recognizably. Data is loaded; wiring is next.'],
+        ['era', 'ready', "A '90s cel classic and a 2020s production differ structurally. Year buckets, ready to wire."],
+        ['episode buckets', 'ready', 'Movie / short / single-cour / long-runner — pacing implies commitment. Ready to wire.'],
+        ['source material', 'data gap', 'Manga, light-novel, game and original adaptations have different DNA. Waiting on the same backfill as genres.'],
+        ['format', 'ready', 'TV / movie / OVA / ONA / special. Ready to wire.'],
+        ['character vectors', 'v2', '"Find anime with characters like Naruto." Needs a separate per-anime fetch — deferred to v2.'],
+        ['review vectors', 'v2', 'Embedding what reviewers say captures humor and tone without an LLM. Deferred to v2.'],
+        ['popularity re-rank', 'waits: users', 'Never part of similarity — used afterwards for a quality floor and a serendipity boost for hidden gems. Needs user data.'],
+        ['relations filter', 'waits: users', 'Discover-mode will exclude sequels of things you already watched. Needs your watch history to exist first.'],
+      ]; %>
+      <ol class="mt-8 grid grid-cols-1 gap-px border border-ink/15 bg-ink/15 sm:grid-cols-2">
+        <% signals.forEach((s, i) => { %>
+        <li class="bg-paper p-4">
+          <div class="flex items-baseline justify-between gap-3">
+            <p class="flex items-baseline gap-3">
+              <span class="font-serif text-lg font-extrabold text-ink/30"><%= String(i + 1).padStart(2, '0') %></span>
+              <span class="meta"><%= s[0] %></span>
+            </p>
+            <% if (s[1] === 'live') { %>
+            <span class="meta shrink-0 bg-sakura px-1.5 py-0.5 text-paper">live</span>
+            <% } else if (s[1] === 'ready') { %>
+            <span class="meta shrink-0 border border-ink/50 px-1.5 py-0.5">ready</span>
+            <% } else { %>
+            <span class="meta shrink-0 text-ink/40"><%= s[1] %></span>
+            <% } %>
+          </div>
+          <p class="mt-2 text-sm leading-relaxed text-ink/70"><%= s[2] %></p>
+        </li>
+        <% }) %>
+      </ol>
+
+      <p class="meta mt-8">model — minilm-l6-v2, 384 dimensions, runs locally · math — cosine similarity, min-max normalization, weighted sum · nothing leaves your machine</p>
+    </div>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>

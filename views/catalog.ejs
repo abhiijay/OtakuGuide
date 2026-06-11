@@ -1,0 +1,112 @@
+<%# Catalog — browse/search the full collection. Receives from pages.js:
+      q, format, decade, tag, sort, page, pages, total, items,
+      formats, decades
+    Filters are plain GET links (no JS); search is a GET form. %>
+<%
+  // Build a querystring for filter links, overriding one key at a time.
+  function qs(overrides) {
+    const params = { q, format, decade, tag, sort, ...overrides };
+    const parts = [];
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== null && v !== undefined && v !== '' && !(k === 'sort' && v === 'score')) {
+        parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+      }
+    }
+    return parts.length ? `?${parts.join('&')}` : '';
+  }
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head', { title: 'Catalog' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('partials/frame') %>
+  <%- include('partials/nav') %>
+
+  <main class="relative mx-auto max-w-6xl overflow-hidden px-6 py-12">
+    <span class="pointer-events-none absolute -right-10 -top-14 select-none font-serif text-[15rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">録</span>
+
+    <div class="reveal relative">
+      <%# ——— Header ——— %>
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <h1>
+          <span class="relative inline-block font-serif text-4xl font-extrabold tracking-tight">
+            <span class="absolute -inset-x-4 -inset-y-1.5 -rotate-1 bg-sakura" aria-hidden="true"></span>
+            <span class="relative text-paper">目録</span>
+          </span>
+          <span class="jp-sub mt-3">mokuroku — the catalog · every anime, one shelf</span>
+        </h1>
+        <p class="meta"><%= total.toLocaleString('en-US') %> titles<%= q ? ` matching “${q}”` : '' %><%= tag ? ` tagged “${tag}”` : '' %></p>
+      </div>
+
+      <%# ——— Search ——— %>
+      <form method="get" action="/catalog" class="mt-8 flex items-stretch border border-ink/80">
+        <input type="search" name="q" value="<%= q %>" placeholder="search titles — 検索"
+          class="w-full bg-paper px-4 py-3 font-mono text-sm uppercase tracking-[0.12em] text-ink placeholder:text-ink/40 focus:outline-none" />
+        <% if (format) { %><input type="hidden" name="format" value="<%= format %>" /><% } %>
+        <% if (decade) { %><input type="hidden" name="decade" value="<%= decade %>" /><% } %>
+        <% if (tag) { %><input type="hidden" name="tag" value="<%= tag %>" /><% } %>
+        <button type="submit" class="shrink-0 bg-ink px-6 font-mono text-xs uppercase tracking-[0.2em] text-paper transition-colors hover:bg-sakura">search</button>
+      </form>
+
+      <%# ——— Filter strips: format / decade / sort ——— %>
+      <div class="mt-5 space-y-2">
+        <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span class="meta w-16 shrink-0">format</span>
+          <a href="/catalog<%= qs({ format: null, page: null }) %>" class="nav-tab <%= !format ? 'text-sakura' : '' %>">all</a>
+          <% formats.forEach((f) => { %>
+          <a href="/catalog<%= qs({ format: f, page: null }) %>" class="nav-tab" <%- format === f ? 'aria-current="page"' : '' %>><%= f.toLowerCase() %></a>
+          <% }) %>
+        </div>
+        <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span class="meta w-16 shrink-0">era</span>
+          <a href="/catalog<%= qs({ decade: null, page: null }) %>" class="nav-tab <%= !decade ? 'text-sakura' : '' %>">all</a>
+          <% decades.forEach((d) => { %>
+          <a href="/catalog<%= qs({ decade: d, page: null }) %>" class="nav-tab" <%- decade === d ? 'aria-current="page"' : '' %>><%= String(d).slice(2) %>s</a>
+          <% }) %>
+        </div>
+        <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span class="meta w-16 shrink-0">sort</span>
+          <a href="/catalog<%= qs({ sort: 'score', page: null }) %>" class="nav-tab" <%- sort === 'score' ? 'aria-current="page"' : '' %>>score</a>
+          <a href="/catalog<%= qs({ sort: 'year', page: null }) %>" class="nav-tab" <%- sort === 'year' ? 'aria-current="page"' : '' %>>newest</a>
+          <a href="/catalog<%= qs({ sort: 'title', page: null }) %>" class="nav-tab" <%- sort === 'title' ? 'aria-current="page"' : '' %>>a–z</a>
+          <% if (tag) { %>
+          <span class="meta">· tagged</span>
+          <a href="/catalog<%= qs({ tag: null, page: null }) %>" class="nav-tab text-sakura"><%= tag %> ✕</a>
+          <% } %>
+        </div>
+      </div>
+    </div>
+
+    <%# ——— Grid ——— %>
+    <% if (items.length) { %>
+    <div class="mt-10 grid grid-cols-2 gap-x-5 gap-y-8 border-t border-ink/80 pt-8 sm:grid-cols-4 lg:grid-cols-6">
+      <% items.forEach((a) => { %>
+      <%- include('partials/cover-card', { a, dark: false }) %>
+      <% }) %>
+    </div>
+    <% } else { %>
+    <div class="mt-10 border-t border-ink/80 pt-16 text-center">
+      <p class="font-serif text-3xl font-extrabold tracking-tight">何もない。</p>
+      <p class="jp-sub mx-auto mt-2">nanimo nai — nothing here. try fewer filters.</p>
+    </div>
+    <% } %>
+
+    <%# ——— Pagination ——— %>
+    <% if (pages > 1) { %>
+    <nav class="mt-12 flex items-center justify-between border-t border-ink/80 pt-5" aria-label="pagination">
+      <% if (page > 1) { %>
+      <a href="/catalog<%= qs({ page: page - 1 }) %>" class="nav-tab">← 前へ prev</a>
+      <% } else { %><span class="nav-tab nav-tab-soon">← 前へ prev</span><% } %>
+      <p class="meta tabular-nums">page <%= page %> / <%= pages.toLocaleString('en-US') %></p>
+      <% if (page < pages) { %>
+      <a href="/catalog<%= qs({ page: page + 1 }) %>" class="nav-tab">next 次へ →</a>
+      <% } else { %><span class="nav-tab nav-tab-soon">next 次へ →</span><% } %>
+    </nav>
+    <% } %>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>

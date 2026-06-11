@@ -92,7 +92,7 @@ const ANIME_BATCH_QUERY = `
         idMal
         title { romaji english native }
         description(asHtml: false)
-        coverImage { large }
+        coverImage { large extraLarge }
         bannerImage
         episodes
         duration

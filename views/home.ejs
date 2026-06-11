@@ -1,20 +1,325 @@
+<%# Home — three acts (locked 2026-06-12):
+      Act I   paper poster hero (the brand's voice)
+      Act II  dark cinematic content (cover art is the hero)
+      Act III paper colophon (signals + footer)
+    Receives from server.js:
+      stats — { total } catalog count, or null if the DB is unavailable
+      top   — up to 8 top-scored anime rows, [] if unavailable
+      rails — [{ jp, sub, items: [...] }] content rails for the dark act
+    Hard cuts between acts, one type system, one red. Subtitle pattern (字幕)
+    applies at display moments only — small Japanese stays poster texture. %>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OtakuGuide</title>
-  <link rel="stylesheet" href="/css/styles.css" />
+  <%- include('partials/head', { title: null }) %>
 </head>
-<body class="bg-paper text-ink min-h-screen flex items-center justify-center p-12">
-  <main class="text-center">
-    <h1 class="font-serif text-6xl font-bold tracking-tight">OtakuGuide</h1>
-    <p class="mt-4 text-sakura text-lg">
-      If this line is sakura red, Tailwind is wired correctly.
-    </p>
-    <p class="mt-8 text-sm text-ink/60">
-      Scaffold smoke test — built <%= new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) %>
-    </p>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+
+  <%- include('partials/frame') %>
+  <%- include('partials/nav') %>
+
+  <main>
+    <%# ═══════════════ ACT I — PAPER ═══════════════ %>
+    <section class="relative cursor-crosshair overflow-hidden border-b border-ink/80">
+      <%# Column rules — the poster grid made visible %>
+      <div class="pointer-events-none absolute inset-0" aria-hidden="true">
+        <div class="mx-auto grid h-full max-w-6xl grid-cols-6 divide-x divide-ink/[0.06] border-x border-ink/[0.06]"></div>
+      </div>
+
+      <%# The 桜 — graphic object, drifts against scroll %>
+      <span class="kanji-drift pointer-events-none absolute -right-16 -top-44 select-none font-serif text-[22rem] font-extrabold leading-none text-sakura sm:-top-56 sm:text-[32rem]" aria-hidden="true">桜</span>
+
+      <%# Red diagonal hairline %>
+      <div class="pointer-events-none absolute left-[-10%] top-[58%] h-px w-[120%] rotate-[-7deg] bg-sakura/50" aria-hidden="true"></div>
+
+      <%# Crosshairs at grid intersections %>
+      <span class="regmark left-[33%] top-24 hidden opacity-40 lg:block" aria-hidden="true"></span>
+      <span class="regmark left-[66%] bottom-32 hidden opacity-40 lg:block" aria-hidden="true"></span>
+
+      <%# Tategaki rails — poster texture, compact inline translations %>
+      <p class="tate meta absolute left-4 top-10 hidden lg:block">アニメ追跡・評価・発見 — track · rate · discover</p>
+      <p class="tate meta absolute bottom-10 right-4 hidden lg:block">35°42′08″N 139°46′27″E — tokyo</p>
+
+      <div class="relative mx-auto max-w-6xl px-6 pt-14 sm:pt-20">
+        <div class="reveal">
+          <p class="meta">［title］ an index of everything animated — no.001</p>
+
+          <%# Wordmark — real name in aria-label; scramble runs on hidden layer %>
+          <h1 aria-label="OtakuGuide" class="mt-6 font-serif font-extrabold leading-[0.82] tracking-tight mix-blend-multiply text-[clamp(4.2rem,12vw,10.5rem)]">
+            <span aria-hidden="true"><span data-scramble class="type-outline">OTAKU</span><br /><span data-scramble>GUIDE</span><span class="text-sakura">。</span></span>
+          </h1>
+
+          <%# Statement — the red thread, subtitled; hanko moved beside it %>
+          <div class="mt-10 flex items-center justify-between gap-6 border-y border-ink/80 py-5">
+            <div>
+              <p class="font-serif text-xl font-bold tracking-tight sm:text-2xl">
+                <span class="mr-3 inline-block h-3.5 w-3.5 bg-sakura" aria-hidden="true"></span><span class="tabular-nums" <% if (stats) { %>data-countup="<%= stats.total %>"<% } %>><%= stats ? stats.total.toLocaleString('en-US') : 'Forty thousand' %></span> stories. One <span class="text-sakura">red thread</span>.
+              </p>
+              <p class="mt-3 font-serif text-base font-bold text-sakura">運命の赤い糸</p>
+              <p class="jp-sub">unmei no akai ito — the red thread of fate</p>
+            </div>
+            <span class="flex h-14 w-14 shrink-0 rotate-[-4deg] items-center justify-center bg-sakura font-serif text-3xl font-extrabold text-paper" aria-hidden="true">桜</span>
+          </div>
+
+          <%# Print caption for the giant kanji — its one subtitle on the page %>
+          <p class="meta mt-6 text-right">桜 — sakura · cherry blossom</p>
+        </div>
+
+        <%# 01 02 03 band — JP-led with stacked subtitles %>
+        <div class="mt-10 grid grid-cols-1 divide-y divide-ink/20 border-t border-ink/80 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <div class="group py-8 sm:pr-8">
+            <p class="font-serif text-6xl font-extrabold tracking-tight text-ink/20 transition-colors duration-200 group-hover:text-sakura">01</p>
+            <p class="mt-3 font-serif text-3xl font-bold">追跡</p>
+            <p class="jp-sub">tsuiseki — track</p>
+            <p class="meta mt-3 normal-case tracking-normal">every episode, rating, drop and rewatch — your history is the input.</p>
+          </div>
+          <div class="group py-8 sm:px-8">
+            <p class="font-serif text-6xl font-extrabold tracking-tight text-ink/20 transition-colors duration-200 group-hover:text-sakura">02</p>
+            <p class="mt-3 font-serif text-3xl font-bold">評価</p>
+            <p class="jp-sub">hyouka — rate</p>
+            <p class="meta mt-3 normal-case tracking-normal">scores and skips alike push your taste vector — dislikes count too.</p>
+          </div>
+          <div class="group py-8 sm:pl-8">
+            <p class="font-serif text-6xl font-extrabold tracking-tight text-ink/20 transition-colors duration-200 group-hover:text-sakura">03</p>
+            <p class="mt-3 font-serif text-3xl font-bold">発見</p>
+            <p class="jp-sub">hakken — discover</p>
+            <p class="meta mt-3 normal-case tracking-normal">twelve signals, one red thread — recommendations that explain themselves.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <%# ═══════════════ ACT II — NIGHT ═══════════════ %>
+    <div class="dark-act border-y border-night bg-night text-paper">
+
+      <%# 運命の赤い糸 — the thread marquee at the act boundary %>
+      <div class="marquee select-none border-b border-paper/15 py-3 text-sakura" aria-hidden="true">
+        <%# Track = two identical halves (translateX(-50%) loops seamlessly);
+            each half repeats the phrase 3× so it always exceeds the viewport
+            width — a short half leaves a visible gap cycling through. %>
+        <div class="marquee-track">
+          <% for (let m = 0; m < 6; m += 1) { %>
+          <span class="shrink-0 whitespace-nowrap font-mono text-sm uppercase tracking-[0.3em] sm:text-base">運命の赤い糸 — the red thread of fate ・ <%= stats ? stats.total.toLocaleString('en-US') : '40,000+' %> stories ・ otakuguide ・ 桜 ・&nbsp;</span>
+          <% } %>
+        </div>
+      </div>
+
+      <%# ——— Podium + chart ——— %>
+      <% if (top && top.length) { %>
+      <section class="view-rise relative mx-auto max-w-6xl overflow-hidden px-6 py-16">
+        <span class="pointer-events-none absolute -right-10 -top-10 select-none font-serif text-[17rem] font-extrabold leading-none text-paper/[0.04]" aria-hidden="true">峰</span>
+        <div class="relative mb-8 flex items-end justify-between gap-4">
+          <h2>
+            <span class="relative inline-block font-serif text-4xl font-extrabold tracking-tight">
+              <span class="absolute -inset-x-4 -inset-y-1.5 -rotate-2 bg-sakura" aria-hidden="true"></span>
+              <span class="relative text-paper">最高峰</span>
+            </span>
+            <span class="jp-sub mt-3">saikouhou — the summit · top of the catalog</span>
+          </h2>
+          <p class="meta">by weighted community score</p>
+        </div>
+
+        <% const scores = top.map((a) => a.average_score);
+           const mx = Math.max(...scores), mn = Math.min(...scores);
+           const barW = (s) => (25 + 75 * (s - mn) / ((mx - mn) || 1)).toFixed(0); %>
+
+        <div class="grid grid-cols-1 gap-px border border-paper/30 bg-paper/30 lg:grid-cols-12">
+          <%# Podium panes — image takeover. All 8 render stacked; preview.js
+              swaps on row hover. Cover floods the cell; type sits on solid
+              night blocks (poster overprint, no gradient scrims). %>
+          <article class="relative min-h-[480px] bg-night lg:col-span-5 lg:min-h-0">
+            <% top.forEach((a, i) => { %>
+            <%# Art strategy: the banner (or cover, if no banner) is a BLURRED
+                ambient backdrop — blur makes its aspect ratio irrelevant, so
+                a wide banner never zoom-crops in this tall cell. The sharp
+                portrait floats on top at its natural aspect, framed. %>
+            <% const sharp = a.cover_image_xl || a.cover_large;
+               const ambient = a.banner_image_url || sharp; %>
+            <div data-preview-pane="<%= i %>" class="<%= i === 0 ? '' : 'hidden' %> absolute inset-0 overflow-hidden">
+              <img src="<%= ambient %>" alt="" aria-hidden="true" decoding="async"
+                class="pane-kenburns absolute inset-0 h-full w-full scale-110 object-cover opacity-50 blur-xl" />
+              <div class="absolute inset-0 flex items-center justify-center pb-24 pt-8">
+                <a href="/anime/<%= a.id %>" class="flex max-h-full justify-center">
+                  <img src="<%= sharp %>" alt="" decoding="async" <%- i === 0 ? 'fetchpriority="high"' : '' %>
+                    class="cover-img max-h-full w-auto border border-paper/25 shadow-[0_24px_60px_-18px_rgba(0,0,0,0.85)]"
+                    onerror="this.onerror=null;this.src='<%= a.cover_image_url %>'" />
+                </a>
+              </div>
+              <div class="grain-overlay absolute inset-0" aria-hidden="true"></div>
+              <span class="type-outline-paper pointer-events-none absolute -top-5 right-1 select-none font-serif text-[10rem] font-extrabold leading-none" aria-hidden="true"><%= String(i + 1).padStart(2, '0') %></span>
+              <div class="absolute inset-x-0 bottom-0 p-5 sm:p-6">
+                <p class="meta inline-block bg-night/90 px-2 py-1">第<%= i + 1 %>位 — <%= i === 0 ? 'the high ground' : 'preview — プレビュー' %></p>
+                <h3 class="mt-2 max-w-full">
+                  <a href="/anime/<%= a.id %>" class="box-decoration-clone inline bg-night/90 px-2 py-1 font-serif text-2xl font-extrabold leading-[1.45] tracking-tight transition-colors hover:text-sakura sm:text-3xl"><%= a.title_romaji %></a>
+                </h3>
+                <div class="mt-3 flex flex-wrap items-center gap-3">
+                  <span class="bg-night/90 px-2 py-0.5 font-serif text-3xl font-extrabold tracking-tight text-sakura tabular-nums"><%= a.average_score.toFixed(2) %></span>
+                  <span class="flex h-2 w-36 border border-paper/40 bg-night/70 p-px">
+                    <span class="h-full bg-sakura" style="width: <%= barW(a.average_score) %>%"></span>
+                  </span>
+                  <span class="meta bg-night/90 px-2 py-1"><%= [a.season_year, a.format].filter(Boolean).join(' · ') %></span>
+                </div>
+              </div>
+            </div>
+            <% }) %>
+          </article>
+
+          <%# Chart rows 第2位–第8位 %>
+          <ol data-preview-list class="divide-y divide-paper/10 bg-night lg:col-span-7">
+            <% top.slice(1).forEach((a, i) => { const n = i + 2; %>
+            <li data-preview-target="<%= n - 1 %>" class="group flex items-center gap-4 px-5 py-3 transition-colors duration-200 hover:bg-sakura/10 sm:gap-5 sm:px-6">
+              <span class="w-10 shrink-0 text-center">
+                <span class="block font-serif text-2xl font-extrabold leading-none tracking-tight text-paper/30 transition-colors duration-200 group-hover:text-sakura"><%= String(n).padStart(2, '0') %></span>
+                <span class="meta mt-1 block text-[0.55rem]">第<%= n %>位</span>
+              </span>
+              <img src="<%= a.cover_image_url %>" alt="" loading="lazy"
+                class="cover-img h-14 w-10 shrink-0 border border-paper/20" />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-baseline justify-between gap-3">
+                  <a href="/anime/<%= a.id %>" class="truncate font-serif text-base font-bold tracking-tight transition-colors hover:text-sakura sm:text-lg"><%= a.title_romaji %></a>
+                  <p class="meta hidden shrink-0 sm:block"><%= [a.season_year, a.format].filter(Boolean).join(' · ') %></p>
+                </div>
+                <div class="mt-2 flex items-center gap-3">
+                  <div class="h-1.5 flex-1 bg-paper/15">
+                    <div class="h-full bg-sakura" style="width: <%= barW(a.average_score) %>%"></div>
+                  </div>
+                  <p class="w-12 shrink-0 text-right font-mono text-xs font-bold text-sakura tabular-nums"><%= a.average_score.toFixed(2) %></p>
+                </div>
+              </div>
+            </li>
+            <% }) %>
+          </ol>
+        </div>
+        <p class="meta mt-3 text-right text-paper/45">score bars scaled to the list range <%= mn.toFixed(2) %>–<%= mx.toFixed(2) %> — 相対目盛</p>
+      </section>
+      <% } %>
+
+      <%# ——— 注目 — in focus: the enso window ———
+          Re-enabled 2026-06-12 night (user call) once AniList extraLarge
+          covers were cached; the enso ring border was dropped at the same
+          time — just the brush-masked circular art remains. %>
+      <% const ENSO_WINDOW = true; %>
+      <% const featRail = (rails || []).find((r) => r.jp === '時間旅行');
+         const feat = featRail ? featRail.items[0] : null; %>
+      <% if (ENSO_WINDOW && feat) { %>
+      <section class="view-rise relative mx-auto max-w-6xl overflow-hidden px-6 pb-16">
+        <span class="pointer-events-none absolute -right-8 top-2 select-none font-serif text-[15rem] font-extrabold leading-none text-paper/[0.04]" aria-hidden="true">注</span>
+        <div class="relative grid grid-cols-1 items-center gap-10 border-t border-paper/20 pt-12 sm:grid-cols-2">
+          <a href="/anime/<%= feat.id %>" class="relative mx-auto block h-72 w-72 sm:h-80 sm:w-80">
+            <img src="<%= feat.cover_image_xl || feat.cover_large %>" alt="" loading="lazy" decoding="async"
+              class="enso-mask absolute inset-0 h-full w-full cover-img"
+              onerror="this.onerror=null;this.src='<%= feat.cover_image_url %>'" />
+          </a>
+          <div>
+            <h2>
+              <span class="font-serif text-3xl font-extrabold tracking-tight text-sakura">注目</span>
+              <span class="jp-sub">chuumoku — in focus · top of the time-travel shelf</span>
+            </h2>
+            <p class="mt-5 font-serif text-3xl font-extrabold tracking-tight text-balance sm:text-4xl"><a href="/anime/<%= feat.id %>" class="transition-colors hover:text-sakura"><%= feat.title_romaji %></a></p>
+            <p class="meta mt-4">
+              <%= feat.season_year || '—' %>
+              <span class="ml-3 text-sakura tabular-nums"><%= feat.average_score.toFixed(2) %></span>
+            </p>
+          </div>
+        </div>
+      </section>
+      <% } %>
+
+      <%# ——— Content rails — full bleed, covers run off the viewport edge ——— %>
+      <% (rails || []).forEach((rail) => { %>
+      <section class="view-rise pb-16">
+        <div class="mx-auto mb-5 flex max-w-6xl items-end justify-between gap-4 border-t border-paper/20 px-6 pt-8">
+          <h2>
+            <span class="font-serif text-3xl font-extrabold tracking-tight text-sakura"><%= rail.jp %></span>
+            <span class="jp-sub"><%= rail.sub %></span>
+          </h2>
+          <p class="meta"><%= rail.items.length %> titles</p>
+        </div>
+        <%# Items render twice (second copy aria-hidden) so rails.js can wrap
+            the scroll position seamlessly — the rail revolves forever. %>
+        <ul data-rail class="rail-scroll flex gap-5 overflow-x-auto pb-3 pt-1">
+          <% for (let copy = 0; copy < 2; copy += 1) { %>
+          <% rail.items.forEach((a) => { %>
+          <li class="group w-52 shrink-0" <%- copy === 1 ? 'aria-hidden="true"' : '' %>>
+            <a href="/anime/<%= a.id %>" class="block" <%- copy === 1 ? 'tabindex="-1"' : '' %>>
+            <div class="cover-lift relative h-[19.5rem] w-52 overflow-hidden border border-paper/20">
+              <img src="<%= a.cover_large %>" alt="" loading="lazy"
+                class="cover-img h-full w-full"
+                onerror="this.onerror=null;this.src='<%= a.cover_image_url %>'" />
+              <%# Hover card — the stats behind the poster %>
+              <div class="absolute inset-0 flex flex-col justify-end bg-night/85 p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                <p class="font-serif text-3xl font-extrabold tracking-tight text-sakura tabular-nums"><%= a.average_score.toFixed(2) %></p>
+                <p class="meta mt-1"><%= [a.season_year, a.format, a.episodes ? a.episodes + ' ep' : null].filter(Boolean).join(' · ') %></p>
+                <% if (a.synopsis_snip) { %>
+                <p class="mt-2 line-clamp-4 text-[11px] leading-relaxed text-paper/85"><%= a.synopsis_snip %>…</p>
+                <% } %>
+              </div>
+            </div>
+            <p class="mt-3 line-clamp-2 font-serif text-sm font-bold leading-snug"><%= a.title_romaji %></p>
+            <p class="meta mt-1">
+              <%= a.season_year || '—' %>
+              <span class="ml-2 text-sakura tabular-nums"><%= a.average_score.toFixed(2) %></span>
+            </p>
+            </a>
+          </li>
+          <% }) %>
+          <% } %>
+        </ul>
+      </section>
+      <% }) %>
+    </div>
+
+    <%# ═══════════════ ACT III — PAPER ═══════════════ %>
+    <section class="view-rise relative mx-auto max-w-6xl overflow-hidden px-6 py-16">
+      <span class="pointer-events-none absolute -left-8 -bottom-12 select-none font-serif text-[15rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">信</span>
+      <div class="relative mb-8 flex items-end justify-between gap-4">
+        <h2>
+          <span class="relative inline-block font-serif text-4xl font-extrabold tracking-tight">
+            <span class="absolute -inset-x-4 -inset-y-1.5 rotate-1 bg-sakura" aria-hidden="true"></span>
+            <span class="relative text-paper">十二の信号</span>
+          </span>
+          <span class="jp-sub mt-3">juuni no shingou — the twelve signals · how your recommendations are made</span>
+        </h2>
+        <a href="/how-it-works" class="nav-tab hidden sm:block">full write-up — how it works</a>
+      </div>
+
+      <% const signals = [
+        ['synopsis embedding', '梗概', 'live'],
+        ['tag tf-idf', '札', 'live'],
+        ['genre one-hot', '類', 'data gap'],
+        ['studio', '社', 'ready'],
+        ['era', 'era', 'ready'],
+        ['episode buckets', '話数', 'ready'],
+        ['source material', '原作', 'data gap'],
+        ['format', '形式', 'ready'],
+        ['character vectors', '人物', 'v2'],
+        ['review vectors', '批評', 'v2'],
+        ['popularity re-rank', '人気', 'waits: users'],
+        ['relations filter', '関係', 'waits: users'],
+      ]; %>
+      <ol class="grid grid-cols-1 gap-px border border-ink/15 bg-ink/15 sm:grid-cols-2 lg:grid-cols-3">
+        <% signals.forEach((s, i) => { %>
+        <li class="flex items-center justify-between gap-3 bg-paper px-4 py-3">
+          <span class="flex items-baseline gap-3 min-w-0">
+            <span class="font-serif text-lg font-extrabold text-ink/30"><%= String(i + 1).padStart(2, '0') %></span>
+            <span class="meta truncate"><%= s[0] %> <span class="text-ink/40">— <%= s[1] %></span></span>
+          </span>
+          <% if (s[2] === 'live') { %>
+          <span class="meta shrink-0 bg-sakura px-1.5 py-0.5 text-paper">live</span>
+          <% } else if (s[2] === 'ready') { %>
+          <span class="meta shrink-0 border border-ink/50 px-1.5 py-0.5">ready</span>
+          <% } else { %>
+          <span class="meta shrink-0 text-ink/40"><%= s[2] %></span>
+          <% } %>
+        </li>
+        <% }) %>
+      </ol>
+    </section>
   </main>
+
+  <%- include('partials/footer') %>
+  <script src="/js/preview.js" defer></script>
+  <script src="/js/intro.js" defer></script>
+  <script src="/js/rails.js" defer></script>
 </body>
 </html>

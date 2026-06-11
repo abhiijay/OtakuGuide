@@ -1,13 +1,15 @@
 // OtakuGuide — main server entry point.
-// Boots Express, wires EJS templating, serves static files, defines routes.
+// Boots Express, wires EJS templating, serves static files, mounts routes.
 //
-// What's intentionally NOT here yet: sessions, auth, database, API routes.
-// Each of those gets added in its own session, with its own dedicated file.
+// Routes live in src/routes/ (locked architecture: pages.js for HTML,
+// api.js for JSON, auth.js for login/logout — the latter two arrive with
+// their features). What's intentionally NOT here yet: sessions, auth.
 
 require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
+const pages = require('./src/routes/pages');
 
 const app = express();
 
@@ -19,10 +21,7 @@ app.set('views', path.join(__dirname, 'views'));
 // e.g. public/css/styles.css → http://localhost:3000/css/styles.css
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Routes (just one for now — the home page).
-app.get('/', (req, res) => {
-  res.render('home');
-});
+app.use('/', pages);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

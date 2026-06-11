@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS anime (
   -- Visuals (URLs to AniList CDN; we don't host images)
   cover_image_url   TEXT,                       -- portrait poster
   banner_image_url  TEXT,                       -- wide banner; NULL ≈30-40% of titles; view layer falls back to a sumi-e placeholder
+  cover_image_xl    TEXT,                       -- AniList extraLarge cover (~460px); cached on demand by scripts/enrich-art.js for titles the UI displays large
 
   -- Synopsis (TWO sources stored raw — see "Multi-source synopsis embedding" decision in CLAUDE.md)
   -- Both are embedded separately; synopsis_vec is the AVERAGE of the two vectors.

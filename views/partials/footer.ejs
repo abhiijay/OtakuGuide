@@ -1,0 +1,26 @@
+<%# Footer. Carries the legally required source attributions
+    (Wikipedia plot text is CC BY-SA; MAL data arrives via Jikan) + colophon. %>
+<footer class="border-t border-ink/80">
+  <div class="mx-auto max-w-6xl px-6">
+    <div class="mt-[3px] border-t border-ink/20"></div>
+    <div class="flex flex-col gap-4 py-8 sm:flex-row sm:items-end sm:justify-between">
+      <div class="flex items-center gap-3">
+        <%- include('enso', { id: 'footer', cls: 'h-7 w-7', color: '#16120F', line: '#FBFBF9' }) %>
+        <div>
+          <p class="meta">OtakuGuide — 桜 — built slowly, understood fully</p>
+          <p class="meta mt-1 text-ink/45">set in shippori mincho · sqlite + sqlite-vec · minilm-l6-v2</p>
+        </div>
+      </div>
+      <div class="meta space-y-1 normal-case tracking-normal text-[0.7rem] sm:text-right">
+        <p>
+          Catalog: <a href="https://github.com/manami-project/anime-offline-database" class="underline decoration-sakura underline-offset-2 hover:text-sakura">anime-offline-database</a>
+          · synopses via <a href="https://jikan.moe" class="underline decoration-sakura underline-offset-2 hover:text-sakura">Jikan</a> (MyAnimeList)
+        </p>
+        <p>
+          Plot summaries from <a href="https://en.wikipedia.org" class="underline decoration-sakura underline-offset-2 hover:text-sakura">Wikipedia</a>,
+          licensed <a href="https://creativecommons.org/licenses/by-sa/4.0/" class="underline decoration-sakura underline-offset-2 hover:text-sakura">CC BY-SA 4.0</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</footer>
