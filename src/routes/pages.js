@@ -242,6 +242,11 @@ router.get('/catalog', (req, res) => {
     params.push(genre);
   }
   if (source) { where.push('a.source = ?'); params.push(source); }
+  // "Newest" means newest RELEASED — an unaired 2033 placeholder topping
+  // the list is a press release, not an anime. Airing shows stay; other
+  // sorts still browse the full catalog. (IS NOT, not !=, so the ~200
+  // unknown-status rows aren't dropped by NULL comparison.)
+  if (sort === 'year') { where.push(`a.status IS NOT 'NOT_YET_RELEASED'`); }
 
   // Score sort demotes unfinished titles and the >= 9.4 noise band (both are
   // pre-release hype votes from tiny samples) below legitimately-scored
