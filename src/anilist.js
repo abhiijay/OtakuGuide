@@ -139,6 +139,21 @@ const ANIME_BATCH_QUERY = `
   }
 `;
 
+// Lightweight verification query — country + adult flag only, WITHOUT the
+// baked-in filters, so the caller can see WHY an id doesn't belong
+// (non-JP vs adult). Used by scripts/sweep-country.js.
+const COUNTRY_BATCH_QUERY = `
+  query CountryBatch($ids: [Int!]!) {
+    Page(page: 1, perPage: 50) {
+      media(type: ANIME, id_in: $ids) {
+        id
+        countryOfOrigin
+        isAdult
+      }
+    }
+  }
+`;
+
 // ---------- rate limiter ----------
 // Module-level timestamp of the last request. waitForSlot() sleeps until
 // at least MIN_INTERVAL_MS has elapsed since this value, then stamps it.
@@ -239,9 +254,24 @@ async function fetchAnimeBatchByIds(ids) {
   return data.data.Page.media;
 }
 
+// Fetches { id, countryOfOrigin, isAdult } for up to 50 AniList IDs with
+// NO standing filters — ids absent from the response are deleted on
+// AniList's side. Used by the country sweep.
+async function fetchCountryBatchByIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > ID_BATCH_SIZE) {
+    throw new Error(`fetchCountryBatchByIds requires 1-${ID_BATCH_SIZE} ids`);
+  }
+  const data = await fetchWithRetry({ query: COUNTRY_BATCH_QUERY, variables: { ids } });
+  if (data.errors) {
+    throw new Error(`AniList GraphQL: ${JSON.stringify(data.errors)}`);
+  }
+  return data.data.Page.media;
+}
+
 module.exports = {
   fetchHighestAnimeId,
   fetchAnimeBatchByIds,
+  fetchCountryBatchByIds,
   ID_BATCH_SIZE,
 };
 

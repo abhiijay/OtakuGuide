@@ -13,9 +13,12 @@ db/*.sqlite-journal
 db/*.sqlite-wal
 db/*.sqlite-shm
 
-# Import checkpoints — written by scripts/import-anime.js; never commit
+# Import/backfill/sweep checkpoints + reports — written by scripts/; never commit
 db/skip_ids.json
 db/import-progress.json
+db/source-backfill-progress.json
+db/country-sweep-progress.json
+db/country-sweep-report.jsonl
 
 # offline-database snapshot — re-downloaded by src/offline-db.js as needed (~58 MB)
 db/anime-offline-database.json

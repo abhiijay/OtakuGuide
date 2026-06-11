@@ -99,6 +99,18 @@
           </h2>
           <a href="/how-it-works" class="nav-tab hidden text-paper sm:block">how this works</a>
         </div>
+
+        <%# Per-signal weight slider — re-ranks the thread on release.
+            recommendFromAnime accepts arbitrary weights; this exposes the
+            story↔tags axis (faceted weighting, the v1 vision in miniature). %>
+        <form method="get" action="/anime/<%= a.id %>" class="mb-8 flex flex-wrap items-center gap-4 border border-paper/20 px-4 py-3">
+          <span class="meta shrink-0">札 tags</span>
+          <input type="range" name="story" min="0" max="100" value="<%= storyPct %>"
+            class="range-sakura w-44 sm:w-64" onchange="this.form.submit()" />
+          <span class="meta shrink-0">story 物語</span>
+          <span class="meta ml-auto tabular-nums">mix — story <%= storyPct %>% · tags <%= 100 - storyPct %>%</span>
+          <noscript><button type="submit" class="meta border border-paper/40 px-2 py-1">apply</button></noscript>
+        </form>
         <div class="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 lg:grid-cols-6">
           <% recs.forEach((r) => { %>
           <div>

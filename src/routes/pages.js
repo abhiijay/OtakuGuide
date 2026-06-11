@@ -128,6 +128,8 @@ router.get('/catalog', (req, res) => {
   const format = CATALOG_FORMATS.includes(req.query.format) ? req.query.format : null;
   const decade = CATALOG_DECADES.includes(Number(req.query.decade)) ? Number(req.query.decade) : null;
   const tag = String(req.query.tag || '').trim().slice(0, 60) || null;
+  const genreNames = db.prepare('SELECT name FROM genres ORDER BY name').all().map((g) => g.name);
+  const genre = genreNames.includes(req.query.genre) ? req.query.genre : null;
   const sort = ['score', 'year', 'title'].includes(req.query.sort) ? req.query.sort : 'score';
   const pageReq = Math.max(1, parseInt(req.query.page, 10) || 1);
 
@@ -147,6 +149,12 @@ router.get('/catalog', (req, res) => {
       `a.id IN (SELECT at.anime_id FROM anime_tags at JOIN tags t ON t.id = at.tag_id WHERE t.name = ?)`
     );
     params.push(tag);
+  }
+  if (genre) {
+    where.push(
+      `a.id IN (SELECT ag.anime_id FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id WHERE g.name = ?)`
+    );
+    params.push(genre);
   }
 
   // Score sort demotes unfinished titles and the >= 9.4 noise band (both are
@@ -179,14 +187,76 @@ router.get('/catalog', (req, res) => {
 
   res.render('catalog', {
     active: 'catalog',
-    q, format, decade, tag, sort, page, pages, total, items,
+    q, format, decade, tag, genre, sort, page, pages, total, items,
     formats: CATALOG_FORMATS,
     decades: CATALOG_DECADES,
+    genres: genreNames,
   });
+});
+
+// Hydrate recommender output (ids + scores) with display fields,
+// preserving rank order. Shared by the detail and discover pages.
+function hydrateRecs(ranked) {
+  if (!ranked.length) return [];
+  const placeholders = ranked.map(() => '?').join(',');
+  const rows = db
+    .prepare(
+      `SELECT id, title_romaji, cover_image_url, season_year, format, average_score
+       FROM anime
+       WHERE id IN (${placeholders}) AND is_adult = 0 AND cover_image_url IS NOT NULL`
+    )
+    .all(...ranked.map((r) => r.id));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return ranked
+    .filter((r) => byId.has(r.id))
+    .map((r) => ({
+      ...byId.get(r.id),
+      cover_large: largeCover(byId.get(r.id).cover_image_url),
+      match: r.score,
+      signals: r.signals,
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// Discover — serendipity mode. A random high-quality seed, its red thread
+// drawn from a WIDE candidate pool and shuffled — surprise over rank.
+// Reroll = plain GET back to /discover (new random seed server-side).
+// ---------------------------------------------------------------------------
+router.get('/discover', (req, res) => {
+  let seed = null;
+  let thread = [];
+  try {
+    seed = db
+      .prepare(
+        `SELECT a.id, title_romaji, title_english, cover_image_url, cover_image_xl,
+                banner_image_url, season_year, format, episodes, average_score,
+                substr(synopsis_mal, 1, 280) AS synopsis_snip
+         FROM anime a
+         WHERE ${QUALITY} AND a.average_score >= 7.5 AND a.synopsis_vec IS NOT NULL
+         ORDER BY RANDOM() LIMIT 1`
+      )
+      .get();
+    if (seed) {
+      seed.cover_large = largeCover(seed.cover_image_url);
+      const ranked = recommendFromAnime(seed.id, { limit: 40, poolSize: 150 });
+      // Fisher-Yates shuffle, then take 18 — the serendipity lean: any of
+      // the top-40 matches may surface, not just the safest dozen.
+      for (let i = ranked.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ranked[i], ranked[j]] = [ranked[j], ranked[i]];
+      }
+      thread = hydrateRecs(ranked.slice(0, 18));
+    }
+  } catch (err) {
+    console.error('discover failed —', err.message);
+  }
+  res.render('discover', { active: 'discover', seed, thread });
 });
 
 // ---------------------------------------------------------------------------
 // Anime detail — the profile poster + the red thread (recommendations).
+// `story` query param (0–100) is the per-signal weight slider: story vs
+// tags share of the merge. Default mirrors DEFAULT_WEIGHTS (0.35/0.25 ≈ 58).
 // ---------------------------------------------------------------------------
 router.get('/anime/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -225,35 +295,22 @@ router.get('/anime/:id', (req, res) => {
     .all(id);
   related.forEach((r) => { r.cover_large = largeCover(r.cover_image_url); });
 
-  // 赤い糸 — "more like this" from the live recommender (signals 01+02).
-  // Hydrate the ranked ids with display fields, preserving rank order.
+  // 赤い糸 — "more like this" from the live recommender (signals 01+02),
+  // weighted by the story↔tags slider.
+  const storyRaw = parseInt(req.query.story, 10);
+  const storyPct = Number.isFinite(storyRaw) ? Math.min(100, Math.max(0, storyRaw)) : 58;
   let recs = [];
   try {
-    const ranked = recommendFromAnime(id, { limit: 12 });
-    if (ranked.length) {
-      const placeholders = ranked.map(() => '?').join(',');
-      const rows = db
-        .prepare(
-          `SELECT id, title_romaji, cover_image_url, season_year, format, average_score
-           FROM anime
-           WHERE id IN (${placeholders}) AND is_adult = 0 AND cover_image_url IS NOT NULL`
-        )
-        .all(...ranked.map((r) => r.id));
-      const byId = new Map(rows.map((r) => [r.id, r]));
-      recs = ranked
-        .filter((r) => byId.has(r.id))
-        .map((r) => ({
-          ...byId.get(r.id),
-          cover_large: largeCover(byId.get(r.id).cover_image_url),
-          match: r.score,
-          signals: r.signals,
-        }));
-    }
+    const ranked = recommendFromAnime(id, {
+      limit: 12,
+      weights: { synopsis: storyPct / 100, tags: (100 - storyPct) / 100 },
+    });
+    recs = hydrateRecs(ranked);
   } catch (err) {
     console.error(`recommendations failed for anime ${id} —`, err.message);
   }
 
-  res.render('anime', { active: '', a, tags, studios, related, recs });
+  res.render('anime', { active: '', a, tags, studios, related, recs, storyPct });
 });
 
 // ---------------------------------------------------------------------------

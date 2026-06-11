@@ -194,6 +194,11 @@
     -webkit-mask-position: center;
   }
 
+  /* Weight slider — native range input in sakura. */
+  .range-sakura {
+    accent-color: theme('colors.sakura.DEFAULT');
+  }
+
   /* Rails scroll without a visible scrollbar (user call 2026-06-12 — the
      red thumb didn't look clean). The rails revolve infinitely instead
      (public/js/rails.js), so there's no meaningful scroll position to show. */
@@ -314,6 +319,28 @@
   }
   @keyframes kanji-drift {
     to { transform: translateY(-90px); }
+  }
+
+  /* Cross-document view transitions — the ink wipe between pages.
+     The new page sweeps in left→right like a brush stroke; browsers
+     without support (Firefox) simply navigate instantly. */
+  @view-transition {
+    navigation: auto;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    ::view-transition-old(root) {
+      animation: vt-out 0.2s ease both;
+    }
+    ::view-transition-new(root) {
+      animation: vt-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+  }
+  @keyframes vt-out {
+    to { opacity: 0.4; }
+  }
+  @keyframes vt-in {
+    from { clip-path: inset(0 100% 0 0); }
+    to   { clip-path: inset(0); }
   }
 
   @media (prefers-reduced-motion: reduce) {
