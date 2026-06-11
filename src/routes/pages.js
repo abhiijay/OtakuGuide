@@ -131,6 +131,14 @@ router.get('/catalog', (req, res) => {
   const tag = String(req.query.tag || '').trim().slice(0, 60) || null;
   const genreNames = db.prepare('SELECT name FROM genres ORDER BY name').all().map((g) => g.name);
   const genre = genreNames.includes(req.query.genre) ? req.query.genre : null;
+  // Distinct source-material values (signal #7). The list grows on its own
+  // while scripts/backfill-source.js fills anime.source; 'Unknown' is MAL's
+  // literal no-data marker, as useless for filtering as NULL.
+  const sourceNames = db
+    .prepare(`SELECT DISTINCT source FROM anime WHERE source IS NOT NULL AND source != 'Unknown' ORDER BY source`)
+    .all()
+    .map((s) => s.source);
+  const source = sourceNames.includes(req.query.source) ? req.query.source : null;
   const sort = ['score', 'year', 'title'].includes(req.query.sort) ? req.query.sort : 'score';
   const pageReq = Math.max(1, parseInt(req.query.page, 10) || 1);
 
@@ -157,6 +165,7 @@ router.get('/catalog', (req, res) => {
     );
     params.push(genre);
   }
+  if (source) { where.push('a.source = ?'); params.push(source); }
 
   // Score sort demotes unfinished titles and the >= 9.4 noise band (both are
   // pre-release hype votes from tiny samples) below legitimately-scored
@@ -188,10 +197,11 @@ router.get('/catalog', (req, res) => {
 
   res.render('catalog', {
     active: 'catalog',
-    q, format, decade, tag, genre, sort, page, pages, total, items,
+    q, format, decade, tag, genre, source, sort, page, pages, total, items,
     formats: CATALOG_FORMATS,
     decades: CATALOG_DECADES,
     genres: genreNames,
+    sources: sourceNames,
   });
 });
 
