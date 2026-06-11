@@ -3,8 +3,8 @@
 // `GET /v4/anime/{mal_id}` returns the synopsis plus genres, themes and
 // demographics — four signals from one call.
 //
-// Rate limit: Jikan advertises 3 req/sec and 60 req/min. We target
-// ~2 req/sec (one request every 500ms) to leave headroom for retries.
+// Rate limit: Jikan advertises 3 req/sec AND 60 req/min — the per-minute
+// cap is the binding one for long crawls. We target ~55 req/min.
 //
 // Exports:
 //   fetchAnime(mal_id) -> { synopsis, source, genres, themes, demographics } | null
@@ -15,9 +15,10 @@
 'use strict';
 
 const JIKAN_BASE = 'https://api.jikan.moe/v4';
-const MIN_INTERVAL_MS = 700; // ~1.4 req/sec — well under Jikan's 3 req/sec
-// hard cap. The 500ms we tried first tripped their burst limiter on warm-up
-// (3 retries on the first batch); 700ms holds steady.
+const MIN_INTERVAL_MS = 1100; // ~55 req/min — under Jikan's 60/min cap.
+// 700ms looked fine per-second but is ~85/min, so the minute limiter fired
+// constantly (see db/source-backfill.log) — every 429 costs a request plus
+// a 2s penalty, so 1100ms is no slower in practice and far politer.
 const MAX_RETRIES = 5;
 const INITIAL_BACKOFF_MS = 2000;
 const USER_AGENT =

@@ -5,9 +5,9 @@
 // abandoned (MAL genre ids collide with our genre table's ids).
 //
 // Hits Jikan once per anime with a mal_id and no source yet (~30K calls at
-// ~2/sec ≈ 4.5h). Resumable: checkpoint at db/source-backfill-progress.json.
-// Run unattended:
-//   npm run backfill:source
+// ~55/min ≈ 8-9h). Resumable: checkpoint at db/source-backfill-progress.json.
+// Run unattended (detached — survives the launching terminal/session):
+//   nohup caffeinate -di node scripts/backfill-source.js >> db/source-backfill.log 2>&1 &
 'use strict';
 
 const fs = require('fs');
@@ -40,7 +40,7 @@ function saveCheckpoint(lastId) {
     )
     .all(startId);
   console.log(`backfill-source: ${rows.length} titles to process (resuming after id ${startId})`);
-  console.log(`estimated: ~${Math.round((rows.length * 0.55) / 3600 * 10) / 10}h at ~2 req/sec`);
+  console.log(`estimated: ~${Math.round((rows.length * 1.1) / 3600 * 10) / 10}h at ~55 req/min`);
 
   let done = 0;
   let misses = 0;
