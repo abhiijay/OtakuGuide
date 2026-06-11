@@ -45,6 +45,60 @@ const CATALOG_PAGE_SIZE = 48;
 const CATALOG_FORMATS = ['TV', 'MOVIE', 'OVA', 'ONA', 'SPECIAL'];
 const CATALOG_DECADES = [1960, 1970, 1980, 1990, 2000, 2010, 2020];
 
+// 注目 — draw one random tag and return its shelf's top-scored title
+// ("Steins;Gate — best of the memory-manipulation shelf"). Used by the
+// home page on every load and by GET /focus for in-place redraws.
+// Tags need >= 20 ranked titles so "best of the shelf" is a real claim,
+// not the top of a sample of three. The denylist exists because
+// tags.is_adult only marks hentai tags — AniDB's cruder descriptor tags
+// ("boobs in your face" came up on the third test draw) pass it, and the
+// home page is the site's face. Denied tags stay browsable in /catalog
+// and search; they just don't get featured.
+const FOCUS_TAG_DENY = [
+  'boob', 'breast', 'oppai', 'pantsu', 'panties', 'underwear', 'lingerie',
+  'fan service', 'fanservice', 'ecchi', 'nudity', 'sex', 'porn', 'fetish',
+  'bondage', 'incest', 'masturbat', 'prostitut', 'censor', 'harem',
+];
+
+function drawFocusShelf() {
+  const focusTag = db
+    .prepare(
+      `SELECT t.id, t.name, COUNT(*) AS n
+       FROM tags t
+       JOIN anime_tags at ON at.tag_id = t.id
+       JOIN anime a ON a.id = at.anime_id
+       WHERE ${QUALITY} AND t.is_adult = 0
+         AND ${FOCUS_TAG_DENY.map(() => `t.name NOT LIKE ?`).join(' AND ')}
+       GROUP BY t.id
+       HAVING COUNT(*) >= 20
+       ORDER BY RANDOM()
+       LIMIT 1`
+    )
+    .get(...FOCUS_TAG_DENY.map((w) => `%${w}%`));
+  if (!focusTag) return null;
+
+  const feat = db
+    .prepare(
+      `SELECT a.id, a.title_romaji, a.cover_image_url, a.cover_image_xl,
+              a.season_year, a.format, a.average_score
+       FROM anime a
+       JOIN anime_tags at ON at.anime_id = a.id
+       WHERE at.tag_id = ? AND ${QUALITY}
+       ORDER BY a.average_score DESC, a.id
+       LIMIT 1`
+    )
+    .get(focusTag.id);
+  if (!feat) return null;
+
+  feat.cover_large = largeCover(feat.cover_image_url);
+  return {
+    feat,
+    tag: TAG_ALIASES[focusTag.name] || focusTag.name, // display form
+    rawTag: focusTag.name, // exact form for the /catalog?tag= link
+    shelfSize: focusTag.n,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Home — the three-act poster.
 // ---------------------------------------------------------------------------
@@ -139,60 +193,23 @@ router.get('/', (req, res) => {
       rail.items.forEach((a) => { a.cover_large = largeCover(a.cover_image_url); })
     );
 
-    // 注目 — the enso window draws one random tag per page load and
-    // features that shelf's top-scored title ("Steins;Gate — best of the
-    // memory-manipulation shelf"). The reroll button is just a reload.
-    // Tags need >= 20 ranked titles so "best of the shelf" is a real
-    // claim, not the top of a sample of three. The denylist exists because
-    // tags.is_adult only marks hentai tags — AniDB's cruder descriptor
-    // tags ("boobs in your face" came up on the third test draw) pass it,
-    // and the home page is the site's face. Denied tags stay browsable
-    // in /catalog and search; they just don't get featured.
-    const FOCUS_TAG_DENY = [
-      'boob', 'breast', 'oppai', 'pantsu', 'panties', 'underwear', 'lingerie',
-      'fan service', 'fanservice', 'ecchi', 'nudity', 'sex', 'porn', 'fetish',
-      'bondage', 'incest', 'masturbat', 'prostitut', 'censor', 'harem',
-    ];
-    const focusTag = db
-      .prepare(
-        `SELECT t.id, t.name, COUNT(*) AS n
-         FROM tags t
-         JOIN anime_tags at ON at.tag_id = t.id
-         JOIN anime a ON a.id = at.anime_id
-         WHERE ${QUALITY} AND t.is_adult = 0
-           AND ${FOCUS_TAG_DENY.map(() => `t.name NOT LIKE ?`).join(' AND ')}
-         GROUP BY t.id
-         HAVING COUNT(*) >= 20
-         ORDER BY RANDOM()
-         LIMIT 1`
-      )
-      .get(...FOCUS_TAG_DENY.map((w) => `%${w}%`));
-    if (focusTag) {
-      const feat = db
-        .prepare(
-          `SELECT a.id, a.title_romaji, a.cover_image_url, a.cover_image_xl,
-                  a.season_year, a.format, a.average_score
-           FROM anime a
-           JOIN anime_tags at ON at.anime_id = a.id
-           WHERE at.tag_id = ? AND ${QUALITY}
-           ORDER BY a.average_score DESC, a.id
-           LIMIT 1`
-        )
-        .get(focusTag.id);
-      if (feat) {
-        feat.cover_large = largeCover(feat.cover_image_url);
-        focus = {
-          feat,
-          tag: TAG_ALIASES[focusTag.name] || focusTag.name, // display form
-          rawTag: focusTag.name, // exact form for the /catalog?tag= link
-          shelfSize: focusTag.n,
-        };
-      }
-    }
+    focus = drawFocusShelf();
   } catch (err) {
     console.error('home: catalog queries failed, rendering without data —', err.message);
   }
   res.render('home', { active: 'home', stats, top, rails, focus, signals: SIGNALS });
+});
+
+// 注目 fragment — focus.js fetches this to redraw the home page's enso
+// window in place (the draw-another-shelf button). Returns just the
+// partial's HTML; 204 when no draw is possible, which tells the client
+// to fall back to a full reload.
+router.get('/focus', (req, res) => {
+  let focus = null;
+  try { focus = drawFocusShelf(); }
+  catch (err) { console.error('focus: draw failed —', err.message); }
+  if (!focus) return res.status(204).end();
+  res.render('partials/focus-window', { focus });
 });
 
 // ---------------------------------------------------------------------------

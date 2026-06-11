@@ -204,37 +204,13 @@
           load — `focus` from the route is one tag's best-scored title.
           The reroll link reloads to /#focus, which lands back here. %>
       <% const ENSO_WINDOW = true; %>
-      <% if (ENSO_WINDOW && focus) { const feat = focus.feat; %>
+      <% if (ENSO_WINDOW && focus) { %>
       <section id="focus" class="view-rise relative mx-auto max-w-6xl overflow-hidden px-6 pb-16">
         <span class="pointer-events-none absolute -right-8 top-2 select-none font-serif text-[15rem] font-extrabold leading-none text-paper/[0.04]" aria-hidden="true">注</span>
-        <div class="relative grid grid-cols-1 items-center gap-10 border-t border-paper/20 pt-12 sm:grid-cols-2">
-          <a href="/anime/<%= feat.id %>" class="relative mx-auto block h-72 w-72 sm:h-80 sm:w-80">
-            <img src="<%= feat.cover_image_xl || feat.cover_large %>" alt="" loading="lazy" decoding="async"
-              class="enso-mask absolute inset-0 h-full w-full cover-img"
-              onerror="this.onerror=null;this.src='<%= feat.cover_image_url %>'" />
-          </a>
-          <div>
-            <h2>
-              <span class="font-serif text-3xl font-extrabold tracking-tight text-sakura">注目</span>
-              <span class="jp-sub">chuumoku — in focus · one shelf, drawn at random</span>
-            </h2>
-            <p class="mt-5 font-serif text-3xl font-extrabold tracking-tight text-balance sm:text-4xl"><a href="/anime/<%= feat.id %>" class="transition-colors hover:text-sakura"><%= feat.title_romaji %></a></p>
-            <p class="meta mt-4">
-              <%= feat.season_year || '—' %>
-              <span class="ml-3 text-sakura tabular-nums"><%= feat.average_score.toFixed(2) %></span>
-            </p>
-            <p class="meta mt-5">
-              best of the
-              <a href="/catalog?tag=<%= encodeURIComponent(focus.rawTag) %>" class="mx-1 border border-paper/40 px-2 py-0.5 transition-colors hover:border-sakura hover:text-sakura"><%= focus.tag %></a>
-              shelf — <%= focus.shelfSize.toLocaleString('en-US') %> titles
-            </p>
-            <%# The reroll must be a REAL navigation: a bare "/#focus" from
-                "/" is same-page fragment scrolling — the browser never hits
-                the server, so nothing redraws. The per-render nonce makes
-                the target URL differ from the current one every time; the
-                route ignores the param. %>
-            <a href="/?draw=<%= Math.random().toString(36).slice(2, 8) %>#focus" class="mt-8 inline-block border border-paper/40 px-4 py-2 font-mono text-xs uppercase tracking-[0.2em] transition-colors hover:border-sakura hover:text-sakura">別の棚 — draw another shelf</a>
-          </div>
+        <%# focus.js swaps this holder's contents in place via GET /focus —
+            without JS the button inside is a plain nonce link (full reload). %>
+        <div data-focus-body>
+          <%- include('partials/focus-window', { focus }) %>
         </div>
       </section>
       <% } %>
@@ -323,5 +299,6 @@
   <script src="/js/preview.js" defer></script>
   <script src="/js/intro.js" defer></script>
   <script src="/js/rails.js" defer></script>
+  <script src="/js/focus.js" defer></script>
 </body>
 </html>

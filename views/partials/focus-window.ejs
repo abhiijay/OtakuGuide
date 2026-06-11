@@ -1,0 +1,31 @@
+<%# The enso window's swappable body — one random shelf's best title.
+    Rendered two ways: inside home.ejs on page load, and alone by
+    GET /focus for the draw-another-shelf in-place redraw (focus.js).
+    Receives: focus = { feat, tag, rawTag, shelfSize }.
+    The no-JS fallback link carries a per-render nonce: a bare "/#focus"
+    from "/" is same-page fragment scrolling — the browser never hits the
+    server, so nothing would redraw. %>
+<div class="relative grid grid-cols-1 items-center gap-10 border-t border-paper/20 pt-12 sm:grid-cols-2">
+  <a href="/anime/<%= focus.feat.id %>" class="relative mx-auto block h-72 w-72 sm:h-80 sm:w-80">
+    <img src="<%= focus.feat.cover_image_xl || focus.feat.cover_large %>" alt="" loading="lazy" decoding="async"
+      class="enso-mask absolute inset-0 h-full w-full cover-img"
+      onerror="this.onerror=null;this.src='<%= focus.feat.cover_image_url %>'" />
+  </a>
+  <div>
+    <h2>
+      <span class="font-serif text-3xl font-extrabold tracking-tight text-sakura">注目</span>
+      <span class="jp-sub">chuumoku — in focus · one shelf, drawn at random</span>
+    </h2>
+    <p class="mt-5 font-serif text-3xl font-extrabold tracking-tight text-balance sm:text-4xl"><a href="/anime/<%= focus.feat.id %>" class="transition-colors hover:text-sakura"><%= focus.feat.title_romaji %></a></p>
+    <p class="meta mt-4">
+      <%= focus.feat.season_year || '—' %>
+      <span class="ml-3 text-sakura tabular-nums"><%= focus.feat.average_score.toFixed(2) %></span>
+    </p>
+    <p class="meta mt-5">
+      best of the
+      <a href="/catalog?tag=<%= encodeURIComponent(focus.rawTag) %>" class="mx-1 border border-paper/40 px-2 py-0.5 transition-colors hover:border-sakura hover:text-sakura"><%= focus.tag %></a>
+      shelf — <%= focus.shelfSize.toLocaleString('en-US') %> titles
+    </p>
+    <a href="/?draw=<%= Math.random().toString(36).slice(2, 8) %>#focus" data-redraw class="mt-8 inline-block border border-paper/40 px-4 py-2 font-mono text-xs uppercase tracking-[0.2em] transition-colors hover:border-sakura hover:text-sakura">別の棚 — draw another shelf</a>
+  </div>
+</div>
