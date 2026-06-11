@@ -6,6 +6,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { recommendFromAnime } = require('../recommender');
+const { SIGNALS } = require('../signals');
 
 const router = express.Router();
 
@@ -115,7 +116,7 @@ router.get('/', (req, res) => {
   } catch (err) {
     console.error('home: catalog queries failed, rendering without data —', err.message);
   }
-  res.render('home', { active: 'home', stats, top, rails });
+  res.render('home', { active: 'home', stats, top, rails, signals: SIGNALS });
 });
 
 // ---------------------------------------------------------------------------
@@ -317,7 +318,7 @@ router.get('/anime/:id', (req, res) => {
 // How it works — plain-English docs for the recommender.
 // ---------------------------------------------------------------------------
 router.get('/how-it-works', (req, res) => {
-  res.render('how-it-works', { active: 'docs' });
+  res.render('how-it-works', { active: 'docs', signals: SIGNALS });
 });
 
 module.exports = router;

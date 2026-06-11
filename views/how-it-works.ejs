@@ -1,5 +1,5 @@
-<%# How it works — plain-English docs for the recommender. Static content;
-    the statuses mirror the signals grid on the home page (keep in sync). %>
+<%# How it works — plain-English docs for the recommender. Signal statuses
+    render from src/signals.js (shared with the home-page grid). %>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -32,7 +32,7 @@
         </p>
         <p>
           When you open an anime's page, the engine measures the angle between
-          its fingerprint and all <span class="tabular-nums">40,000+</span>
+          its fingerprint and all <span class="tabular-nums">38,000+</span>
           others (<em>cosine similarity</em> — closer angle, closer story).
           That's signal 01. Signal 02 compares community tags, weighted so
           rare, specific tags ("iyashikei", "time loop") count far more than
@@ -42,8 +42,8 @@
         </p>
         <p>
           Every recommendation says which signals matched — if it can't explain
-          itself, it doesn't ship. Ten more signals join the merge as their
-          data lands; same math, more voters.
+          itself, it doesn't ship. Eight signals vote today; the remaining
+          four join as their data lands. Same math, more voters.
         </p>
       </div>
 
@@ -53,37 +53,25 @@
         <span class="jp-sub">juuni no shingou — the twelve signals</span>
       </h2>
 
-      <% const signals = [
-        ['synopsis embedding', 'live', 'The headline signal. Both synopses embedded, averaged, compared by cosine similarity — matches stories by meaning, not keywords.'],
-        ['tag tf-idf', 'live', 'Community tags weighted by rarity (TF-IDF), with 49 alias rules so "sci-fi" and "science fiction" count as one tag, not two strangers.'],
-        ['genre one-hot', 'data gap', 'Classic categorical matching. Blocked until the genre backfill runs — the offline database merges genres into tags, so genres come from Jikan.'],
-        ['studio', 'ready', 'ufotable, KyoAni and MAPPA each cluster recognizably. Data is loaded; wiring is next.'],
-        ['era', 'ready', "A '90s cel classic and a 2020s production differ structurally. Year buckets, ready to wire."],
-        ['episode buckets', 'ready', 'Movie / short / single-cour / long-runner — pacing implies commitment. Ready to wire.'],
-        ['source material', 'data gap', 'Manga, light-novel, game and original adaptations have different DNA. Waiting on the same backfill as genres.'],
-        ['format', 'ready', 'TV / movie / OVA / ONA / special. Ready to wire.'],
-        ['character vectors', 'v2', '"Find anime with characters like Naruto." Needs a separate per-anime fetch — deferred to v2.'],
-        ['review vectors', 'v2', 'Embedding what reviewers say captures humor and tone without an LLM. Deferred to v2.'],
-        ['popularity re-rank', 'waits: users', 'Never part of similarity — used afterwards for a quality floor and a serendipity boost for hidden gems. Needs user data.'],
-        ['relations filter', 'waits: users', 'Discover-mode will exclude sequels of things you already watched. Needs your watch history to exist first.'],
-      ]; %>
+      <%# `signals` comes from src/signals.js via the route — the single
+          source of truth shared with the home-page grid. %>
       <ol class="mt-8 grid grid-cols-1 gap-px border border-ink/15 bg-ink/15 sm:grid-cols-2">
         <% signals.forEach((s, i) => { %>
         <li class="bg-paper p-4">
           <div class="flex items-baseline justify-between gap-3">
             <p class="flex items-baseline gap-3">
               <span class="font-serif text-lg font-extrabold text-ink/30"><%= String(i + 1).padStart(2, '0') %></span>
-              <span class="meta"><%= s[0] %></span>
+              <span class="meta"><%= s.name %></span>
             </p>
-            <% if (s[1] === 'live') { %>
+            <% if (s.status === 'live') { %>
             <span class="meta shrink-0 bg-sakura px-1.5 py-0.5 text-paper">live</span>
-            <% } else if (s[1] === 'ready') { %>
+            <% } else if (s.status === 'ready') { %>
             <span class="meta shrink-0 border border-ink/50 px-1.5 py-0.5">ready</span>
             <% } else { %>
-            <span class="meta shrink-0 text-ink/40"><%= s[1] %></span>
+            <span class="meta shrink-0 text-ink/40"><%= s.status %></span>
             <% } %>
           </div>
-          <p class="mt-2 text-sm leading-relaxed text-ink/70"><%= s[2] %></p>
+          <p class="mt-2 text-sm leading-relaxed text-ink/70"><%= s.blurb %></p>
         </li>
         <% }) %>
       </ol>

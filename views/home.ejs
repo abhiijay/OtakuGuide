@@ -283,33 +283,21 @@
         <a href="/how-it-works" class="nav-tab hidden sm:block">full write-up — how it works</a>
       </div>
 
-      <% const signals = [
-        ['synopsis embedding', '梗概', 'live'],
-        ['tag tf-idf', '札', 'live'],
-        ['genre one-hot', '類', 'data gap'],
-        ['studio', '社', 'ready'],
-        ['era', 'era', 'ready'],
-        ['episode buckets', '話数', 'ready'],
-        ['source material', '原作', 'data gap'],
-        ['format', '形式', 'ready'],
-        ['character vectors', '人物', 'v2'],
-        ['review vectors', '批評', 'v2'],
-        ['popularity re-rank', '人気', 'waits: users'],
-        ['relations filter', '関係', 'waits: users'],
-      ]; %>
+      <%# `signals` comes from src/signals.js via the route — the single
+          source of truth shared with /how-it-works. %>
       <ol class="grid grid-cols-1 gap-px border border-ink/15 bg-ink/15 sm:grid-cols-2 lg:grid-cols-3">
         <% signals.forEach((s, i) => { %>
         <li class="flex items-center justify-between gap-3 bg-paper px-4 py-3">
           <span class="flex items-baseline gap-3 min-w-0">
             <span class="font-serif text-lg font-extrabold text-ink/30"><%= String(i + 1).padStart(2, '0') %></span>
-            <span class="meta truncate"><%= s[0] %> <span class="text-ink/40">— <%= s[1] %></span></span>
+            <span class="meta truncate"><%= s.name %> <span class="text-ink/40">— <%= s.kanji %></span></span>
           </span>
-          <% if (s[2] === 'live') { %>
+          <% if (s.status === 'live') { %>
           <span class="meta shrink-0 bg-sakura px-1.5 py-0.5 text-paper">live</span>
-          <% } else if (s[2] === 'ready') { %>
+          <% } else if (s.status === 'ready') { %>
           <span class="meta shrink-0 border border-ink/50 px-1.5 py-0.5">ready</span>
           <% } else { %>
-          <span class="meta shrink-0 text-ink/40"><%= s[2] %></span>
+          <span class="meta shrink-0 text-ink/40"><%= s.status %></span>
           <% } %>
         </li>
         <% }) %>
