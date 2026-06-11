@@ -228,7 +228,12 @@
               <a href="/catalog?tag=<%= encodeURIComponent(focus.rawTag) %>" class="mx-1 border border-paper/40 px-2 py-0.5 transition-colors hover:border-sakura hover:text-sakura"><%= focus.tag %></a>
               shelf — <%= focus.shelfSize.toLocaleString('en-US') %> titles
             </p>
-            <a href="/#focus" class="mt-8 inline-block border border-paper/40 px-4 py-2 font-mono text-xs uppercase tracking-[0.2em] transition-colors hover:border-sakura hover:text-sakura">別の棚 — draw another shelf</a>
+            <%# The reroll must be a REAL navigation: a bare "/#focus" from
+                "/" is same-page fragment scrolling — the browser never hits
+                the server, so nothing redraws. The per-render nonce makes
+                the target URL differ from the current one every time; the
+                route ignores the param. %>
+            <a href="/?draw=<%= Math.random().toString(36).slice(2, 8) %>#focus" class="mt-8 inline-block border border-paper/40 px-4 py-2 font-mono text-xs uppercase tracking-[0.2em] transition-colors hover:border-sakura hover:text-sakura">別の棚 — draw another shelf</a>
           </div>
         </div>
       </section>
