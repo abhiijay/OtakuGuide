@@ -14,12 +14,12 @@
 //   #4 studio match (IDF-weighted)             [LIVE]
 //   #5 era proximity                           [LIVE — refiner, see below]
 //   #6 episode-count bucket                    [LIVE — refiner]
-//   #7 source material                         [blocked — anime.source column empty]
+//   #7 source material                         [LIVE — refiner; data filling via scripts/backfill-source.js]
 //   #8 format kinship                          [LIVE — refiner]
 //
 // Generators vs refiners:
 //   Signals #1-#4 are CANDIDATE GENERATORS — they're sparse enough that
-//   "top 100 by this signal" is a meaningful list. Signals #5/#6/#8 are
+//   "top 100 by this signal" is a meaningful list. Signals #5/#6/#7/#8 are
 //   too dense for that (thousands of anime tie at "same year" / "same
 //   format", so a 100-row pool would be an arbitrary slice). They run as
 //   REFINERS instead: once the generators have produced a merged pool,
@@ -383,10 +383,18 @@ function neighborsByGenres(animeId, limit = 100) {
 // (licensors/producers carry is_animation_studio = 0 and are excluded —
 // sharing a distributor says nothing about style).
 //
-// Score = Σ min(ln(N / df), 8) over shared studios — same IDF logic as
-// signal #2, because studio prevalence varies hugely: sharing Toei
-// (thousands of titles) is weak evidence of kinship; sharing ufotable
-// (dozens) is strong. The ceiling 8 mirrors IDF_CEILING for tags.
+// Score = (Σ IDF over SHARED studios) / (Σ IDF over the QUERY's studios)
+// where IDF = min(ln(N / df), 8) — same logic as signal #2, because studio
+// prevalence varies hugely: sharing Toei (thousands of titles) is weak
+// evidence of kinship; sharing ufotable (dozens) is strong.
+//
+// Dividing by the query's own total makes the score an ABSOLUTE fraction
+// in (0, 1]: "how much of this anime's studio identity does the candidate
+// share?" That matters at merge time — most anime have exactly one
+// animation studio, so the whole candidate pool often ties at the same
+// raw score, and min-max normalization would collapse a constant pool to
+// zero (erasing the signal entirely). An absolute score skips min-max,
+// like the categorical refiners.
 function neighborsByStudio(animeId, limit = 100) {
   const queryStudios = db.prepare(`
     SELECT ast.studio_id
@@ -402,13 +410,17 @@ function neighborsByStudio(animeId, limit = 100) {
 
   return db.prepare(`
     WITH df AS (
-      SELECT ast.studio_id, COUNT(DISTINCT ast.anime_id) AS df
+      SELECT ast.studio_id, COUNT(DISTINCT ast.anime_id) AS df,
+             min(ln(CAST(? AS REAL) / COUNT(DISTINCT ast.anime_id)), 8.0) AS idf
       FROM anime_studios ast
       WHERE ast.studio_id IN (${placeholders})
       GROUP BY ast.studio_id
+    ),
+    qtotal AS (
+      SELECT SUM(idf) AS total FROM df
     )
     SELECT a.id, a.title_romaji, a.title_english, a.average_score,
-           SUM(min(ln(CAST(? AS REAL) / df.df), 8.0)) AS studio_score
+           SUM(df.idf) / (SELECT total FROM qtotal) AS studio_score
     FROM anime_studios ast
     JOIN df ON df.studio_id = ast.studio_id
     JOIN anime a ON a.id = ast.anime_id
@@ -417,11 +429,11 @@ function neighborsByStudio(animeId, limit = 100) {
     GROUP BY a.id
     ORDER BY studio_score DESC, COALESCE(a.average_score, 0) DESC
     LIMIT ?
-  `).all(...queryStudios, N, animeId, limit);
+  `).all(N, ...queryStudios, animeId, limit);
 }
 
 // =============================================================================
-// Signals #5 / #6 / #8 — categorical refiners (era, episodes, format)
+// Signals #5 / #6 / #7 / #8 — categorical refiners (era, episodes, source, format)
 // =============================================================================
 
 // Era (#5): triangular decay over two decades. Same year scores 1, each
@@ -461,6 +473,29 @@ function episodesScore(epsA, epsB) {
   return d === 0 ? 1 : d === 1 ? 0.5 : 0;
 }
 
+// Source material (#7): exact match = 1; same family = 0.5. "Adapted from
+// a manga" and "adapted from a web manga" are near-identical pedigrees;
+// "light novel" and "visual novel" are not (one is prose, one is a game).
+// Families: manga-likes, prose novels, games. Original / Music / Other /
+// etc. stand alone. Jikan's literal 'Unknown' carries no information and
+// scores 0, same as missing.
+//
+// Data dependency: anime.source fills via scripts/backfill-source.js
+// (~4.5h Jikan crawl, resumable). Until a row has a source, this scores 0
+// for it — the signal strengthens automatically as the backfill lands.
+const SOURCE_FAMILY = {
+  'Manga': 'manga', 'Web manga': 'manga', '4-koma manga': 'manga',
+  'Light novel': 'novel', 'Novel': 'novel', 'Web novel': 'novel', 'Book': 'novel',
+  'Game': 'game', 'Visual novel': 'game', 'Card game': 'game',
+};
+
+function sourceScore(srcA, srcB) {
+  if (!srcA || !srcB || srcA === 'Unknown' || srcB === 'Unknown') return 0;
+  if (srcA === srcB) return 1;
+  const famA = SOURCE_FAMILY[srcA];
+  return famA !== undefined && famA === SOURCE_FAMILY[srcB] ? 0.5 : 0;
+}
+
 // Format (#8): exact match = 1; "sibling" formats = 0.5. TV and ONA are
 // both episodic series (ONA is just the streaming-native label); OVA and
 // SPECIAL are both side-content. MOVIE stands alone.
@@ -481,13 +516,13 @@ function categoricalScores(animeId, candidateIds) {
   if (candidateIds.length === 0) return out;
 
   const q = db.prepare(
-    'SELECT season_year, episodes, format FROM anime WHERE id = ?'
+    'SELECT season_year, episodes, format, source FROM anime WHERE id = ?'
   ).get(animeId);
   if (!q) return out;
 
   const placeholders = candidateIds.map(() => '?').join(',');
   const rows = db.prepare(`
-    SELECT id, season_year, episodes, format
+    SELECT id, season_year, episodes, format, source
     FROM anime WHERE id IN (${placeholders})
   `).all(...candidateIds);
 
@@ -495,6 +530,7 @@ function categoricalScores(animeId, candidateIds) {
     out.set(r.id, {
       era:      eraScore(q.season_year, r.season_year),
       episodes: episodesScore(q.episodes, r.episodes),
+      source:   sourceScore(q.source, r.source),
       format:   formatScore(q.format, r.format),
     });
   }
@@ -534,10 +570,14 @@ function minMaxNormalize(rows, scoreKey) {
 // anime and their weighted scores adjust the ranking BEFORE the final
 // sort + slice. Refiners adjust scores but don't appear in the `signals`
 // provenance string — that string answers "which signal FOUND this."
-// opts.refiners: subset of ['era', 'episodes', 'format'] to apply
-// (defaults to all three).
+// opts.refiners: subset of ['era', 'episodes', 'source', 'format'] to
+// apply (defaults to all four).
 function mergeSignals(inputs, weights, opts = {}) {
-  const { limit = 10, refineFor = null, refiners = ['era', 'episodes', 'format'] } = opts;
+  const {
+    limit = 10,
+    refineFor = null,
+    refiners = ['era', 'episodes', 'source', 'format'],
+  } = opts;
 
   const normalized = {};
   if (inputs.synopsis) {
@@ -552,9 +592,12 @@ function mergeSignals(inputs, weights, opts = {}) {
     const withScore = inputs.genre.map((r) => ({ ...r, _score: r.genre_score }));
     normalized.genre = minMaxNormalize(withScore, '_score');
   }
+  // Studio is NOT min-max normalized — its score is already an absolute
+  // fraction of the query's studio identity in (0, 1]. Min-max would
+  // collapse the (very common) all-one-studio pool to zero. See the
+  // neighborsByStudio comment.
   if (inputs.studio) {
-    const withScore = inputs.studio.map((r) => ({ ...r, _score: r.studio_score }));
-    normalized.studio = minMaxNormalize(withScore, '_score');
+    normalized.studio = inputs.studio.map((r) => ({ ...r, _score: r.studio_score }));
   }
 
   const merged = new Map();
@@ -586,6 +629,7 @@ function mergeSignals(inputs, weights, opts = {}) {
       if (!c) continue;
       if (refiners.includes('era'))      r.score += (weights.era      || 0) * c.era;
       if (refiners.includes('episodes')) r.score += (weights.episodes || 0) * c.episodes;
+      if (refiners.includes('source'))   r.score += (weights.source   || 0) * c.source;
       if (refiners.includes('format'))   r.score += (weights.format   || 0) * c.format;
     }
   }
@@ -614,7 +658,7 @@ function recommendFromAnime(animeId, opts = {}) {
   const {
     limit = 10,
     poolSize = 100,
-    signals = ['synopsis', 'tags', 'genre', 'studio', 'era', 'episodes', 'format'],
+    signals = ['synopsis', 'tags', 'genre', 'studio', 'era', 'episodes', 'source', 'format'],
     weights = DEFAULT_WEIGHTS,
   } = opts;
 
@@ -624,7 +668,7 @@ function recommendFromAnime(animeId, opts = {}) {
   if (signals.includes('genre'))    inputs.genre    = neighborsByGenres(animeId, poolSize);
   if (signals.includes('studio'))   inputs.studio   = neighborsByStudio(animeId, poolSize);
 
-  const refiners = ['era', 'episodes', 'format'].filter((s) => signals.includes(s));
+  const refiners = ['era', 'episodes', 'source', 'format'].filter((s) => signals.includes(s));
   return mergeSignals(inputs, weights, { limit, refineFor: animeId, refiners });
 }
 
@@ -716,6 +760,12 @@ if (require.main === module) {
   assert(formatScore('TV', 'TV') === 1, 'format: TV vs TV = 1');
   assert(formatScore('TV', 'ONA') === 0.5, 'format: TV vs ONA siblings = 0.5');
   assert(formatScore('TV', 'MOVIE') === 0, 'format: TV vs MOVIE = 0');
+  assert(sourceScore('Manga', 'Manga') === 1, 'source: Manga vs Manga = 1');
+  assert(sourceScore('Manga', 'Web manga') === 0.5, 'source: Manga vs Web manga family = 0.5');
+  assert(sourceScore('Light novel', 'Visual novel') === 0, 'source: light novel vs visual novel = 0');
+  assert(sourceScore('Original', 'Original') === 1, 'source: Original vs Original = 1');
+  assert(sourceScore('Unknown', 'Unknown') === 0, 'source: Unknown carries no information');
+  assert(sourceScore(null, 'Manga') === 0, 'source: missing = 0');
 
   console.log('\nPhase 2 — end-to-end against the live DB');
 
