@@ -538,6 +538,103 @@ function categoricalScores(animeId, candidateIds) {
 }
 
 // =============================================================================
+// Signal #12 — relations graph (a FILTER, not a similarity signal)
+// =============================================================================
+
+// "More like this" must mean OTHER anime. Mushishi's nearest neighbors are
+// its own sequels and specials — true, and useless to show. This signal
+// walks the `relations` table from the query anime and the resulting id
+// set is EXCLUDED from the candidate pool (the anime page already lists
+// the franchise in its own relations section, where it belongs).
+//
+// Why the walk is depth-limited to 3, not the full transitive closure:
+// our v1 relations are uncategorized (`relation_type = 'RELATED'`, see the
+// signal-table revisions in CLAUDE.md), so crossover specials chain
+// unrelated franchises together — the full closure from Fate/Dragon
+// Ball/Lupin reaches ONE shared component of ~3,485 anime (~9% of the
+// catalog), measured 2026-06-12. Depth 3 is the smallest depth that still
+// covers a real franchise's stragglers (Mushishi needs 3 hops to reach
+// Zoku Shou: Suzu no Shizuku) while keeping the worst measured blast
+// radius at ~244 (Dragon Ball Z). The cost is over-exclusion of crossover
+// partners (DBZ's walk swallows One Piece) — invisible against a
+// 100-candidate pool, unlike franchise spam which is a visible bug.
+// When v2 brings categorized relation types, stop traversing
+// crossover/character edges instead of capping depth.
+const FRANCHISE_DEPTH = 3;
+
+const FRANCHISE_WALK_SQL = `
+  WITH RECURSIVE walk(id, d) AS (
+    SELECT ?, 0
+    UNION
+    SELECT r.related_anime_id, w.d + 1
+    FROM relations r JOIN walk w ON r.anime_id = w.id
+    WHERE w.d < ?
+    UNION
+    SELECT r.anime_id, w.d + 1
+    FROM relations r JOIN walk w ON r.related_anime_id = w.id
+    WHERE w.d < ?
+  )
+  SELECT DISTINCT id FROM walk
+`;
+
+// Returns the Set of anime ids within `depth` relation-hops of animeId,
+// including animeId itself. Reads only the `relations` table; an anime
+// with no relations returns just itself.
+function franchiseIds(animeId, depth = FRANCHISE_DEPTH) {
+  const rows = db.prepare(FRANCHISE_WALK_SQL).all(animeId, depth, depth);
+  return new Set(rows.map((r) => r.id));
+}
+
+// True when one title equals the other, or is a word-boundary prefix of
+// the other ("death note" → "death note rewrite 1: visions of a god").
+// Both inputs must already be lowercased.
+function titlesAreKin(a, b) {
+  if (a.length > b.length) [a, b] = [b, a];
+  if (!b.startsWith(a)) return false;
+  return b.length === a.length || !/[a-z0-9]/.test(b[a.length]);
+}
+
+// Builds the signal-#12 exclusion predicate for one query anime: a
+// function (candidateRow) => true when the candidate must be dropped from
+// the rec pool. Called once per recommendFromAnime when excludeFranchise
+// is on. Candidate rows must carry id, title_romaji, title_english
+// (every generator SELECTs all three).
+//
+// The relation walk alone is NOT enough: 22.4K of 38.5K catalog rows have
+// no relations at all, because the offline-DB carries some entries
+// multiple times (once per source site) and the copy without cross-ids
+// gets no relatedAnime. Measured leaks: a second FMA: Brotherhood row
+// (OVA, no mal_id, zero relations) topped its own twin's rec list, and
+// "Death Note Rewrite 1/2" (split-episode twins of the linked Death Note:
+// Rewrite) surfaced on Death Note's page. So a candidate is ALSO dropped
+// when either of its titles is kin (exact or word-boundary prefix, either
+// direction) to any walk member's title. Deliberate over-exclusion:
+// "Monster" swallows "Monster Musume" too — invisible against a
+// 100-candidate pool, unlike franchise spam, which is a visible bug.
+function franchiseExcluder(animeId, depth = FRANCHISE_DEPTH) {
+  const ids = franchiseIds(animeId, depth);
+
+  const memberPh = [...ids].map(() => '?').join(',');
+  const names = [];
+  for (const t of db.prepare(
+    `SELECT title_romaji, title_english FROM anime WHERE id IN (${memberPh})`
+  ).all(...ids)) {
+    if (t.title_romaji)  names.push(t.title_romaji.toLowerCase());
+    if (t.title_english) names.push(t.title_english.toLowerCase());
+  }
+
+  return (row) => {
+    if (ids.has(row.id)) return true;
+    for (const cand of [row.title_romaji, row.title_english]) {
+      if (!cand) continue;
+      const lc = cand.toLowerCase();
+      if (names.some((n) => titlesAreKin(n, lc))) return true;
+    }
+    return false;
+  };
+}
+
+// =============================================================================
 // Multi-signal merge — combine per-signal candidate lists into one ranking
 // =============================================================================
 
@@ -572,12 +669,26 @@ function minMaxNormalize(rows, scoreKey) {
 // provenance string — that string answers "which signal FOUND this."
 // opts.refiners: subset of ['era', 'episodes', 'source', 'format'] to
 // apply (defaults to all four).
+// opts.exclude: predicate (candidateRow) => bool; rows answering true are
+// dropped from every candidate list (signal #12's franchise filter).
+// Applied BEFORE min-max normalization — a same-franchise near-perfect
+// match would otherwise set the per-signal ceiling and compress every
+// real candidate's normalized score.
 function mergeSignals(inputs, weights, opts = {}) {
   const {
     limit = 10,
     refineFor = null,
     refiners = ['era', 'episodes', 'source', 'format'],
+    exclude = null,
   } = opts;
+
+  if (exclude) {
+    const filtered = {};
+    for (const sig of Object.keys(inputs)) {
+      filtered[sig] = inputs[sig].filter((r) => !exclude(r));
+    }
+    inputs = filtered;
+  }
 
   const normalized = {};
   if (inputs.synopsis) {
@@ -634,16 +745,27 @@ function mergeSignals(inputs, weights, opts = {}) {
     }
   }
 
-  return [...merged.values()]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((r) => ({
+  // Final ranking, deduped by display title: the catalog carries some
+  // entries twice (offline-DB source twins, e.g. two Baccano! rows) and
+  // both can reach the pool — a list showing the same title twice reads
+  // as broken. Keep the higher-scored twin.
+  const ranked = [...merged.values()].sort((a, b) => b.score - a.score);
+  const seenTitles = new Set();
+  const out = [];
+  for (const r of ranked) {
+    if (out.length === limit) break;
+    const key = (r.title || '').toLowerCase();
+    if (seenTitles.has(key)) continue;
+    seenTitles.add(key);
+    out.push({
       id: r.id,
       title: r.title,
       score: Number(r.score.toFixed(4)),
       signals: r.signals.join('+'),
       average_score: r.average_score,
-    }));
+    });
+  }
+  return out;
 }
 
 // =============================================================================
@@ -654,12 +776,18 @@ function mergeSignals(inputs, weights, opts = {}) {
 // normalizes, weighted-sums, applies the categorical refiners, returns
 // top N. `signals` and `weights` are overridable so the UI can later
 // expose per-axis sliders.
+//
+// excludeFranchise (default ON) drops the query anime's whole franchise
+// from the results via signal #12 — nobody needs to hear that Mushishi
+// is similar to Mushishi. Pass false to get the raw "nearest of anything"
+// ranking (useful for debugging signal quality).
 function recommendFromAnime(animeId, opts = {}) {
   const {
     limit = 10,
     poolSize = 100,
     signals = ['synopsis', 'tags', 'genre', 'studio', 'era', 'episodes', 'source', 'format'],
     weights = DEFAULT_WEIGHTS,
+    excludeFranchise = true,
   } = opts;
 
   const inputs = {};
@@ -669,7 +797,8 @@ function recommendFromAnime(animeId, opts = {}) {
   if (signals.includes('studio'))   inputs.studio   = neighborsByStudio(animeId, poolSize);
 
   const refiners = ['era', 'episodes', 'source', 'format'].filter((s) => signals.includes(s));
-  return mergeSignals(inputs, weights, { limit, refineFor: animeId, refiners });
+  const exclude = excludeFranchise ? franchiseExcluder(animeId) : null;
+  return mergeSignals(inputs, weights, { limit, refineFor: animeId, refiners, exclude });
 }
 
 module.exports = {
@@ -681,6 +810,9 @@ module.exports = {
   neighborsByGenres,
   neighborsByStudio,
   categoricalScores,
+  franchiseIds,
+  franchiseExcluder,
+  titlesAreKin,
   // merge plumbing (exposed for tests + future "explain" UI)
   mergeSignals,
   minMaxNormalize,
@@ -767,6 +899,16 @@ if (require.main === module) {
   assert(sourceScore('Unknown', 'Unknown') === 0, 'source: Unknown carries no information');
   assert(sourceScore(null, 'Manga') === 0, 'source: missing = 0');
 
+  // Signal #12 title kinship (franchise twins the relations graph misses)
+  assert(titlesAreKin('death note', 'death note'), 'kin: exact match');
+  assert(titlesAreKin('death note', 'death note rewrite 1: visions of a god'),
+    'kin: word-boundary prefix');
+  assert(titlesAreKin('death note rewrite 1: visions of a god', 'death note'),
+    'kin: prefix check is symmetric');
+  assert(!titlesAreKin('mushishi', 'mushi-uta'), 'kin: mushishi vs mushi-uta differ');
+  assert(!titlesAreKin('death note', 'death notebook of doom'),
+    'kin: prefix without word boundary does not match');
+
   console.log('\nPhase 2 — end-to-end against the live DB');
 
   const count = db.prepare(
@@ -840,6 +982,36 @@ if (require.main === module) {
     }
     renderAnchor(ref.label, row);
     printed++;
+  }
+
+  // Signal #12 — the franchise filter. Mushishi is the motivating case
+  // (its top recs were its own sequels and specials); Death Note covers
+  // the relations-less title-twin leak ("Death Note Rewrite 1/2").
+  const sigTwelveCases = [
+    { mal_id:  457, kinTitle: 'mushishi' },
+    { mal_id: 1535, kinTitle: 'death note' },
+  ];
+  for (const c of sigTwelveCases) {
+    const row = db.prepare(
+      'SELECT id, title_romaji FROM anime WHERE mal_id = ? AND synopsis_vec IS NOT NULL'
+    ).get(c.mal_id);
+    if (!row) {
+      console.log(`\n  mal ${c.mal_id} not processed — skipping signal #12 check`);
+      continue;
+    }
+    console.log(`\n  === Signal #12 — franchise filter (${row.title_romaji}, mal ${c.mal_id}) ===`);
+    const fam = franchiseIds(row.id);
+    assert(fam.has(row.id), 'franchise walk includes the query anime itself');
+    assert(fam.size >= 4, `franchise walk reaches the sequels/specials (got ${fam.size})`);
+    const recs = recommendFromAnime(row.id, { limit: 10 });
+    assert(recs.every((r) => !fam.has(r.id)), 'no walk members in the filtered recs');
+    assert(recs.every((r) => !titlesAreKin(c.kinTitle, r.title.toLowerCase())),
+      `no title-twins of "${c.kinTitle}" in the filtered recs`);
+    const raw = recommendFromAnime(row.id, { limit: 10, excludeFranchise: false });
+    assert(raw.some((r) => fam.has(r.id) || titlesAreKin(c.kinTitle, r.title.toLowerCase())),
+      'excludeFranchise:false still surfaces the franchise (filter is the only thing hiding it)');
+    console.log('  filtered top 10:');
+    for (const r of recs) console.log(`    ${r.score.toFixed(4)}  [${r.signals.padEnd(26)}]  ${r.title}`);
   }
 
   if (printed === 0) {
