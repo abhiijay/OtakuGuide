@@ -1,0 +1,139 @@
+<%# Docs chapter 04 — the ranking. Vote merging, the franchise checkpoint,
+    the slider and discover mode. Copy rule: simple words, no hyphens in
+    visible text. %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'The ranking — how it works' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('../partials/frame') %>
+  <%- include('../partials/nav') %>
+
+  <main class="relative mx-auto max-w-6xl overflow-hidden px-6 py-12">
+    <span class="pointer-events-none absolute -right-10 top-6 select-none font-serif text-[15rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">番</span>
+
+    <div class="reveal relative">
+      <%- include('../partials/docs-header') %>
+
+      <div class="mt-10 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          By this point the finders have returned their candidates and
+          every signal has an opinion about each one. This chapter is the
+          last stretch: how those opinions become one ranked list, what
+          gets stopped at the gate on the way, and where you get to put
+          your thumb on the scale.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">合算</span>
+        <span class="jp-sub">gassan — adding up the votes</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          Each signal speaks its own unit. The story signal returns an
+          angle, the tag signal returns a sum of rarity weights, the genre
+          signal returns an overlap fraction. Added raw, the loudest unit
+          would drown the rest, so first each signal's scores are squeezed
+          onto one shared scale, from zero for its weakest candidate to one
+          for its strongest.
+        </p>
+        <p>
+          Then every score is multiplied by its signal's weight and the
+          results are added. There is no bonus rule for agreement, because
+          none is needed: a show that three signals found simply collects
+          three votes, and rises past a show that collected one. The nudges
+          from chapter three adjust these sums, and the final order is the
+          red thread.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">関所</span>
+        <span class="jp-sub">sekisho — the checkpoint</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          The most similar thing to any show is always its own sequel, and
+          a list that says so is useless. So before the votes are counted,
+          a checkpoint stands between the candidates and the ranking. The
+          engine walks the relations graph outward from the show you are
+          viewing, up to three steps, and everything that walk reaches,
+          sequels, prequels, films, specials and recaps, is turned away.
+        </p>
+        <p>
+          Why three steps and not "follow every link forever"? Because the
+          relations data does not say <em>how</em> two shows are related,
+          and crossover specials chain unrelated franchises together. Walk
+          forever from some big franchises and you would reach thousands of
+          titles and ban a tenth of the catalog. Three steps covers a real
+          franchise, including its stragglers, without that damage.
+        </p>
+        <p>
+          The graph alone is not enough, though. The catalog holds some
+          entries twice under the same name, and the duplicate copy often
+          carries no relation links at all, so it would stroll past the
+          graph check. The checkpoint therefore also turns away any
+          candidate whose title matches, or begins the same way as, a
+          title in the franchise. And just before the list ships, one last
+          sweep removes twins, so the same title never occupies two slots.
+          None of this hides the franchise from you: it still appears on
+          the page in its own relations section, which is where it belongs.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">調整</span>
+        <span class="jp-sub">chousei — the slider, and showing the work</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          The weights are not sacred, and on every anime page the biggest
+          two are yours. The slider above the red thread mixes
+          <em>story</em> against <em>tags</em>: drag it toward story and
+          the fingerprint vote grows louder, drag it toward tags and the
+          community labels take over. The whole ranking is recomputed for
+          your mix on the spot, which is only possible because the math is
+          fast enough to run fresh on every view.
+        </p>
+        <p>
+          Every card also names the finders that brought it in, in the
+          small print under the title. That label is a promise about the
+          whole system: any recommendation here can explain itself, and a
+          feature that cannot explain itself does not ship.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">出会い</span>
+        <span class="jp-sub">deai — discover mode</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          The discover page runs the same engine with a looser grip. It
+          draws one random, genuinely good show as a seed, asks the engine
+          for a wide thread of forty matches from an extra deep candidate
+          pool, shuffles them, and deals you eighteen. The shuffle is the
+          point: the safest dozen picks are not always the most
+          interesting, and a small spin of the wheel surfaces matches you
+          would not have scrolled to. One press of the reroll draws a new
+          seed and a new hand.
+        </p>
+        <p>
+          What waits beyond this is honest roadmap: a popularity pass that
+          adds a quality floor and a gentle boost for great shows few
+          people have seen, and once watch histories exist, a discover
+          mode that knows to skip the sequels of shows you have already
+          finished. Both are listed with their real status in chapter
+          three.
+        </p>
+      </div>
+
+      <%- include('../partials/docs-pager') %>
+    </div>
+  </main>
+
+  <%- include('../partials/footer') %>
+</body>
+</html>

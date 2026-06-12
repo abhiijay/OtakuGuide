@@ -1,0 +1,13 @@
+<%# Chapter header for the docs pages. Expects `chapter` ({num, kanji,
+    reading, title}) in scope. The breadcrumb walks back to the index. %>
+<p class="meta">
+  <a href="/how-it-works" class="hover:text-sakura">仕組み — how it works</a>
+  <span class="text-ink/40">· chapter <%= chapter.num %> of 04</span>
+</p>
+<h1 class="mt-6">
+  <span class="relative inline-block font-serif text-4xl font-extrabold tracking-tight">
+    <span class="absolute -inset-x-4 -inset-y-1.5 rotate-1 bg-sakura" aria-hidden="true"></span>
+    <span class="relative text-paper"><%= chapter.kanji %></span>
+  </span>
+  <span class="jp-sub mt-3"><%= chapter.reading %> — <%= chapter.title.toLowerCase() %></span>
+</h1>

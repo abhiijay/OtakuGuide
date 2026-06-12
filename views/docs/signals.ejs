@@ -1,0 +1,103 @@
+<%# Docs chapter 03 — the signals. Finders vs nudges, then the twelve with
+    blurb + detail from src/signals.js (the single source of truth shared
+    with the home grid). Copy rule: simple words, no hyphens in visible text. %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'The signals — how it works' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('../partials/frame') %>
+  <%- include('../partials/nav') %>
+
+  <main class="relative mx-auto max-w-6xl overflow-hidden px-6 py-12">
+    <span class="pointer-events-none absolute -right-10 top-6 select-none font-serif text-[15rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">信</span>
+
+    <div class="reveal relative">
+      <%- include('../partials/docs-header') %>
+
+      <div class="mt-10 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          One measurement is an opinion. Several independent measurements
+          that agree are a recommendation. The engine never trusts a single
+          signal, not even the story fingerprint, because every signal has
+          a blind spot: summaries miss tone, tags miss plot, studios change
+          staff, genres are coarse. Each signal sees one face of a show,
+          and the system is the panel of them voting together.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">猟師と判事</span>
+        <span class="jp-sub">ryoushi to hanji — finders and nudges</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          The eight live signals come in two kinds, and the difference is
+          about how selective each one can afford to be.
+        </p>
+        <p>
+          <strong>Finders</strong> go hunting across the whole catalog. The
+          story fingerprint, the tag match, the genre overlap and the
+          studio signal each bring back their hundred best candidates.
+          These four earn that job because they are picky: their hundredth
+          best match still means something.
+        </p>
+        <p>
+          <strong>Nudges</strong> would make terrible hunters. Thousands of
+          shows aired the same year, run the same length, share a format or
+          a source, so "same year" points everywhere and nowhere. Instead
+          of hunting, era, episode count, source material and format score
+          the candidates the finders already brought back, and push each
+          one up or down the ranking. A candidate found by story and tags
+          that also matches the era and the length rises; one that matches
+          nothing else settles lower.
+        </p>
+        <p>
+          On the cards you see, the named signals are the finders that
+          brought the show in. The nudges work in silence, because "found
+          by" and "adjusted by" are different claims and the label answers
+          the first one.
+        </p>
+      </div>
+
+      <%# ——— The twelve, with honest status ——— %>
+      <h2 class="mt-14">
+        <span class="font-serif text-3xl font-extrabold tracking-tight">十二の信号</span>
+        <span class="jp-sub">juuni no shingou — the twelve signals</span>
+      </h2>
+      <p class="mt-5 max-w-3xl text-[15px] leading-relaxed text-ink/85">
+        Eight signals vote today and a ninth stands guard at the checkpoint.
+        The remaining three are listed with honest status labels, because a
+        roadmap you can see beats a feature that quietly does not exist.
+      </p>
+
+      <ol class="mt-8 grid grid-cols-1 gap-px border border-ink/15 bg-ink/15 sm:grid-cols-2">
+        <% signals.forEach((s, i) => { %>
+        <li class="bg-paper p-5">
+          <div class="flex items-baseline justify-between gap-3">
+            <p class="flex items-baseline gap-3">
+              <span class="font-serif text-lg font-extrabold text-ink/30"><%= String(i + 1).padStart(2, '0') %></span>
+              <span class="meta"><%= s.name %> <span class="text-ink/40">— <%= s.kanji %></span></span>
+            </p>
+            <% if (s.status === 'live') { %>
+            <span class="meta shrink-0 bg-sakura px-1.5 py-0.5 text-paper">live</span>
+            <% } else if (s.status === 'ready') { %>
+            <span class="meta shrink-0 border border-ink/50 px-1.5 py-0.5">ready</span>
+            <% } else { %>
+            <span class="meta shrink-0 text-ink/40"><%= s.status %></span>
+            <% } %>
+          </div>
+          <p class="mt-2 text-sm font-medium leading-relaxed text-ink/80"><%= s.blurb %></p>
+          <p class="mt-2 text-sm leading-relaxed text-ink/60"><%= s.detail %></p>
+        </li>
+        <% }) %>
+      </ol>
+
+      <%- include('../partials/docs-pager') %>
+    </div>
+  </main>
+
+  <%- include('../partials/footer') %>
+</body>
+</html>

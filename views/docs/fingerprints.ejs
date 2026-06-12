@@ -1,0 +1,115 @@
+<%# Docs chapter 02 — the fingerprints. Embeddings and cosine similarity
+    in plain words. Copy rule: simple words, no hyphens in visible text. %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'The fingerprints — how it works' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('../partials/frame') %>
+  <%- include('../partials/nav') %>
+
+  <main class="relative mx-auto max-w-6xl overflow-hidden px-6 py-12">
+    <span class="pointer-events-none absolute -right-10 top-6 select-none font-serif text-[15rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">指</span>
+
+    <div class="reveal relative">
+      <%- include('../partials/docs-header') %>
+
+      <div class="mt-10 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          The hardest part of recommending stories is that stories are made
+          of meaning, and computers are made of numbers. Matching keywords
+          fails in both directions: two shows can share the word "ocean"
+          and have nothing in common, and two quiet shows about wandering
+          healers can share no words at all. This chapter explains the
+          piece of the engine that solves that, and it is the headline
+          signal of the whole system.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">地図</span>
+        <span class="jp-sub">chizu — a map of meaning</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          A small language model, about eighty megabytes, runs on our own
+          machine. No keys, no cloud, no cost, and no synopsis ever leaves
+          the site to be read. The model reads a summary and answers with a
+          list of <strong>384 numbers</strong>. That list is called an
+          embedding, and the friendliest way to picture it is as an address
+          on an enormous map of meaning. Every text lands somewhere on that
+          map, and texts that talk about similar things land near each
+          other, even when they share no vocabulary.
+        </p>
+        <p>
+          The numbers themselves mean nothing to a human, and that is fine.
+          What matters is the geometry: revenge stories gather in one
+          region, gentle countryside stories in another, time travel plots
+          in a third. The model learned that geometry from reading a very
+          large amount of text, and we simply borrow its sense of
+          direction.
+        </p>
+        <p>
+          Before any text is read, markup is stripped out so the model sees
+          prose, not code. Titles are deliberately left out of the reading:
+          a romanized name tells you almost nothing about a story, and
+          feeding it in would only add noise. And one honest limit: the
+          model reads English, so the rare entry whose only summary is in
+          another language gets a blurry fingerprint until better text
+          exists for it.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">平均</span>
+        <span class="jp-sub">heikin — two readings, one portrait</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          Chapter one explained why each anime carries two summaries: the
+          fan voice and the encyclopedia voice. The engine fingerprints
+          each text separately, then stores the average of the two: the
+          point on the map that sits halfway between them. A summary that
+          leans hard on mood and a summary that leans hard on plot pull the
+          portrait toward the middle, and the middle is closer to what the
+          show actually is than either text alone. When only one summary
+          exists, its fingerprint stands alone, which is still good, just
+          less rounded.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">角度</span>
+        <span class="jp-sub">kakudo — comparing two stories</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          To compare two anime, picture each fingerprint as an arrow
+          pointing out from the center of the map. The engine measures the
+          <strong>angle between the two arrows</strong>. Two arrows
+          pointing the same way mean two stories about the same kind of
+          thing, and they score near the top. Arrows at right angles mean
+          the stories are unrelated. The score does not care how long the
+          arrows are, only where they point, which is exactly right: a long
+          rambling synopsis and a short sharp one should still match if
+          they describe the same kind of tale.
+        </p>
+        <p>
+          This measurement is cheap on purpose. The fingerprints live
+          inside the database itself, next to the rest of each anime's row,
+          and comparing one show against all
+          <span class="tabular-nums">38,000</span> others takes well under
+          a millisecond. That speed is why the red thread can be computed
+          fresh on every page view, with whatever slider mix you choose,
+          instead of being precomputed and stale.
+        </p>
+      </div>
+
+      <%- include('../partials/docs-pager') %>
+    </div>
+  </main>
+
+  <%- include('../partials/footer') %>
+</body>
+</html>

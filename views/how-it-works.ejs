@@ -1,5 +1,8 @@
-<%# How it works — plain-English docs for the recommender. Signal statuses
-    render from src/signals.js (shared with the home-page grid). %>
+<%# How it works — docs INDEX. Holds the brief, the TLDR and the chapter
+    map; the depth lives in views/docs/* (one chapter per page, user
+    direction 2026-06-12). Copy rule: simple words, no hyphens in visible
+    text. The em dashes in .meta / .jp-sub strips are design furniture
+    (字幕 pattern), not prose punctuation. %>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,62 +24,71 @@
         <span class="jp-sub mt-3">shikumi — how your recommendations are made</span>
       </h1>
 
+      <%# ——— The brief ——— %>
       <div class="mt-10 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
         <p>
-          OtakuGuide doesn't guess from genres alone. Every anime's synopsis —
-          from two independent sources, MyAnimeList's fan-prose and Wikipedia's
-          encyclopedic plot section — is converted into a <strong>384-number
-          fingerprint</strong> (an <em>embedding</em>) by a small language model
-          running locally. Anime that <em>mean</em> similar things end up with
-          similar fingerprints, even when they share no tags at all.
-        </p>
-        <p>
-          When you open an anime's page, the engine measures the angle between
-          its fingerprint and all <span class="tabular-nums">38,000+</span>
-          others (<em>cosine similarity</em> — closer angle, closer story).
-          That's signal 01. Signal 02 compares community tags, weighted so
-          rare, specific tags ("iyashikei", "time loop") count far more than
-          ubiquitous ones ("action"). Each signal votes, the votes are
-          normalized to a common scale, and a weighted sum produces the final
-          ranking — the <span class="text-sakura">赤い糸</span> list you see.
-        </p>
-        <p>
-          Every recommendation says which signals matched — if it can't explain
-          itself, it doesn't ship. Eight signals vote today; the remaining
-          four join as their data lands. Same math, more voters.
+          <strong>The brief</strong> — the whole idea in one breath. Open any
+          anime page and a list called <span class="text-sakura">赤い糸</span>,
+          the red thread, appears under the synopsis. It is built by a small
+          engine that lives on this site. The engine reads what every anime
+          in the catalog is <em>about</em>, measures how alike two shows are
+          from several independent angles, lets those measurements vote, and
+          shows you the winners. No account, no tracking, no cloud service.
+          These pages explain every part of it in plain words.
         </p>
       </div>
 
-      <%# ——— The twelve, with honest status ——— %>
+      <%# ——— The TLDR ——— %>
       <h2 class="mt-14">
-        <span class="font-serif text-3xl font-extrabold tracking-tight">十二の信号</span>
-        <span class="jp-sub">juuni no shingou — the twelve signals</span>
+        <span class="font-serif text-2xl font-extrabold tracking-tight">要約</span>
+        <span class="jp-sub">youyaku — the TLDR, the whole system in five lines</span>
       </h2>
-
-      <%# `signals` comes from src/signals.js via the route — the single
-          source of truth shared with the home-page grid. %>
-      <ol class="mt-8 grid grid-cols-1 gap-px border border-ink/15 bg-ink/15 sm:grid-cols-2">
-        <% signals.forEach((s, i) => { %>
-        <li class="bg-paper p-4">
-          <div class="flex items-baseline justify-between gap-3">
-            <p class="flex items-baseline gap-3">
-              <span class="font-serif text-lg font-extrabold text-ink/30"><%= String(i + 1).padStart(2, '0') %></span>
-              <span class="meta"><%= s.name %></span>
-            </p>
-            <% if (s.status === 'live') { %>
-            <span class="meta shrink-0 bg-sakura px-1.5 py-0.5 text-paper">live</span>
-            <% } else if (s.status === 'ready') { %>
-            <span class="meta shrink-0 border border-ink/50 px-1.5 py-0.5">ready</span>
-            <% } else { %>
-            <span class="meta shrink-0 text-ink/40"><%= s.status %></span>
-            <% } %>
-          </div>
-          <p class="mt-2 text-sm leading-relaxed text-ink/70"><%= s.blurb %></p>
+      <ol class="mt-6 max-w-3xl space-y-px border border-ink/15 bg-ink/15">
+        <li class="flex gap-4 bg-paper p-4">
+          <span class="font-serif text-lg font-extrabold text-ink/30">1</span>
+          <p class="text-[15px] leading-relaxed text-ink/85">Over <span class="tabular-nums">38,000</span> anime live in our own database: titles, two summaries each, tags, genres, studios, years, formats and how they all relate.</p>
         </li>
-        <% }) %>
+        <li class="flex gap-4 bg-paper p-4">
+          <span class="font-serif text-lg font-extrabold text-ink/30">2</span>
+          <p class="text-[15px] leading-relaxed text-ink/85">A small language model turns every summary into a fingerprint of its meaning, so stories can match by what they say, not by the words they use.</p>
+        </li>
+        <li class="flex gap-4 bg-paper p-4">
+          <span class="font-serif text-lg font-extrabold text-ink/30">3</span>
+          <p class="text-[15px] leading-relaxed text-ink/85">Eight signals vote on every candidate: story, tags, genres, studio, era, length, source material and format. Votes are scaled and added up.</p>
+        </li>
+        <li class="flex gap-4 bg-paper p-4">
+          <span class="font-serif text-lg font-extrabold text-ink/30">4</span>
+          <p class="text-[15px] leading-relaxed text-ink/85">A checkpoint removes the franchise of the show you are viewing, so the list is reserved for new things, never its own sequels.</p>
+        </li>
+        <li class="flex gap-4 bg-paper p-4">
+          <span class="font-serif text-lg font-extrabold text-ink/30">5</span>
+          <p class="text-[15px] leading-relaxed text-ink/85">You hold the slider that mixes the votes, and every pick names the signals that found it. If it cannot explain itself, it does not ship.</p>
+        </li>
       </ol>
 
-      <p class="meta mt-8">model — minilm-l6-v2, 384 dimensions, runs locally · math — cosine similarity, min-max normalization, weighted sum · nothing leaves your machine</p>
+      <%# ——— The chapters ——— %>
+      <h2 class="mt-14">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">目次</span>
+        <span class="jp-sub">mokuji — the chapters, one part each</span>
+      </h2>
+      <p class="mt-4 max-w-3xl text-[15px] leading-relaxed text-ink/85">
+        The depth lives in four short chapters. Read them in order, or jump
+        to the part you are curious about.
+      </p>
+      <div class="mt-6 grid grid-cols-1 gap-px border border-ink/15 bg-ink/15 sm:grid-cols-2">
+        <% chapters.forEach((c) => { %>
+        <a href="/how-it-works/<%= c.slug %>" class="group bg-paper p-6">
+          <div class="flex items-baseline justify-between gap-3">
+            <span class="meta"><%= c.num %> · <%= c.kanji %> — <%= c.reading %></span>
+            <span class="meta text-ink/40 transition-colors group-hover:text-sakura">→</span>
+          </div>
+          <p class="mt-2 font-serif text-xl font-extrabold tracking-tight transition-colors group-hover:text-sakura"><%= c.title %></p>
+          <p class="mt-2 text-sm leading-relaxed text-ink/60"><%= c.tease %></p>
+        </a>
+        <% }) %>
+      </div>
+
+      <p class="meta mt-8">model — minilm, 384 numbers per fingerprint, runs on our own machine · math — cosine similarity, weighted votes · no account, no tracking, nothing about you is collected</p>
     </div>
   </main>
 

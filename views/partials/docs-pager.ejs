@@ -1,0 +1,26 @@
+<%# Prev / next chapter links for the docs pages. Expects `prev` and `next`
+    (chapter objects or null) in scope. Ends of the chain link to the index. %>
+<nav class="mt-16 grid grid-cols-2 gap-px border border-ink/15 bg-ink/15" aria-label="chapters">
+  <% if (prev) { %>
+  <a href="/how-it-works/<%= prev.slug %>" class="group bg-paper p-5">
+    <span class="meta text-ink/40">← <%= prev.num %> · <%= prev.kanji %></span>
+    <span class="mt-1 block font-serif text-lg font-extrabold tracking-tight transition-colors group-hover:text-sakura"><%= prev.title %></span>
+  </a>
+  <% } else { %>
+  <a href="/how-it-works" class="group bg-paper p-5">
+    <span class="meta text-ink/40">← 仕組み</span>
+    <span class="mt-1 block font-serif text-lg font-extrabold tracking-tight transition-colors group-hover:text-sakura">The map</span>
+  </a>
+  <% } %>
+  <% if (next) { %>
+  <a href="/how-it-works/<%= next.slug %>" class="group bg-paper p-5 text-right">
+    <span class="meta text-ink/40"><%= next.num %> · <%= next.kanji %> →</span>
+    <span class="mt-1 block font-serif text-lg font-extrabold tracking-tight transition-colors group-hover:text-sakura"><%= next.title %></span>
+  </a>
+  <% } else { %>
+  <a href="/how-it-works" class="group bg-paper p-5 text-right">
+    <span class="meta text-ink/40">仕組み →</span>
+    <span class="mt-1 block font-serif text-lg font-extrabold tracking-tight transition-colors group-hover:text-sakura">Back to the map</span>
+  </a>
+  <% } %>
+</nav>

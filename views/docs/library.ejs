@@ -1,0 +1,128 @@
+<%# Docs chapter 01 — the library. Where every piece of data comes from.
+    Copy rule: simple words, no hyphens in visible text. %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'The library — how it works' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('../partials/frame') %>
+  <%- include('../partials/nav') %>
+
+  <main class="relative mx-auto max-w-6xl overflow-hidden px-6 py-12">
+    <span class="pointer-events-none absolute -right-10 top-6 select-none font-serif text-[15rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">蔵</span>
+
+    <div class="reveal relative">
+      <%- include('../partials/docs-header') %>
+
+      <div class="mt-10 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          Every recommendation starts long before you open a page. It starts
+          with a library: more than <span class="tabular-nums">38,000</span>
+          anime stored in our own database, on our own machine. Nothing is
+          fetched while you browse. Every page you open is answered from
+          data that is already here. This chapter explains where each piece
+          of that library comes from.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">一覧</span>
+        <span class="jp-sub">ichiran — the catalog itself</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          The list of titles comes from a community project that merges the
+          big anime tracking sites into one open file, refreshed every week.
+          One download gives us every anime with its titles, year, season,
+          format, episode count, community score, studio credits and cover
+          art, plus the links that connect each entry to its page on every
+          major tracking site.
+        </p>
+        <p>
+          We keep Japanese works and we keep them honestly: a sweep checked
+          every entry against its country of origin and removed more than
+          two thousand strays that were never anime to begin with. Adult
+          works are filtered out at the database layer, everywhere, with no
+          toggle. Dark and violent shows are not adult works and they all
+          stay, because they are part of the medium.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">語り部</span>
+        <span class="jp-sub">kataribe — the two storytellers</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          Each anime carries up to two summaries, fetched once and stored.
+          The first is the fan summary from MyAnimeList: warm, written to
+          make you curious, good at describing how a show <em>feels</em>.
+          The second is the plot section from Wikipedia: cooler, written to
+          inform, good at describing what actually <em>happens</em>.
+        </p>
+        <p>
+          Keeping both was a deliberate choice. The two texts describe the
+          same story from different heights, and the engine fingerprints
+          both, so a show can match on its mood, on its plot machinery, or
+          on both at once. Where Wikipedia has no plot section, the fan
+          summary carries the load alone. Both raw texts stay on the anime
+          page with their sources named, and the Wikipedia text is shared
+          under its Creative Commons license, credited in the footer of
+          every page.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">札と類</span>
+        <span class="jp-sub">fuda to rui — tags, genres and studios</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          Tags arrive merged from several communities, which means several
+          spelling habits. Left alone, the four spellings of science
+          fiction would count as four unrelated labels, and two shows
+          sharing "the same tag" under different spellings would look like
+          strangers. A curated list of 49 spelling rules folds those
+          variants into one canonical tag each, and growing that list is
+          normal maintenance, not a special event.
+        </p>
+        <p>
+          Genres turned out to be hiding inside the tags: the merged data
+          had folded each site's genre list into the tag pile. We recovered
+          the eighteen canonical genres from there, which covers more than
+          eighty percent of the catalog, including thousands of titles that
+          the usual genre sources cannot serve at all.
+        </p>
+        <p>
+          Studio credits ride along with the catalog file, and so does the
+          relations graph: roughly <span class="tabular-nums">32,000</span>
+          links that say "these two entries belong to the same family",
+          which chapter four turns into the franchise checkpoint.
+        </p>
+      </div>
+
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">遅い車線</span>
+        <span class="jp-sub">osoi shasen — the slow lane</span>
+      </h2>
+      <div class="mt-5 max-w-3xl space-y-5 text-[15px] leading-relaxed text-ink/85">
+        <p>
+          Some data cannot arrive in one download. The source material of
+          each show, whether it was born as manga, a novel, a game or an
+          original work, is being filled in by a slow crawl that asks for
+          one title per second, politely, around the clock. Signals that
+          depend on data like this are written to stay quiet where the data
+          is missing rather than guess, and they grow stronger on their own
+          as the rows fill in. The status labels in chapter three tell you
+          honestly which signals are at full strength today.
+        </p>
+      </div>
+
+      <%- include('../partials/docs-pager') %>
+    </div>
+  </main>
+
+  <%- include('../partials/footer') %>
+</body>
+</html>
