@@ -175,7 +175,7 @@ router.get('/', (req, res) => {
                AND a.season = ? AND a.season_year = ?
                AND a.status IN ('RELEASING', 'FINISHED')
              ORDER BY a.popularity DESC NULLS LAST, a.average_score DESC
-             LIMIT 12`
+             LIMIT 24`
           )
           .all(konki.season, konki.year),
       },
@@ -189,7 +189,7 @@ router.get('/', (req, res) => {
              FROM anime a
              WHERE ${QUALITY} AND format = 'MOVIE'
              ORDER BY average_score DESC
-             LIMIT 12`
+             LIMIT 24`
           )
           .all(),
       },
@@ -205,7 +205,7 @@ router.get('/', (req, res) => {
                AND season_year BETWEEN 1990 AND 1999
                AND format IN ('TV', 'MOVIE')
              ORDER BY average_score DESC
-             LIMIT 12`
+             LIMIT 24`
           )
           .all(),
       },
@@ -221,7 +221,7 @@ router.get('/', (req, res) => {
              JOIN tags t ON t.id = at.tag_id
              WHERE t.name = 'time travel' AND ${QUALITY}
              ORDER BY a.average_score DESC
-             LIMIT 12`
+             LIMIT 24`
           )
           .all(),
       },
