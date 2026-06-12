@@ -18,8 +18,10 @@
     "test:round-trip": "node scripts/test-round-trip.js",
     "test:recommender": "node src/recommender.js",
     "import": "node scripts/import-anime.js",
+    "refresh": "node scripts/import-anime.js --refresh && npm run sweep:country && npm run seed:genres && npm run backfill:source && npm run enrich:art",
     "enrich:art": "node scripts/enrich-art.js",
     "backfill:source": "node scripts/backfill-source.js",
+    "seed:genres": "node scripts/seed-genres-from-tags.js",
     "sweep:country": "node scripts/sweep-country.js"
   },
   "dependencies": {

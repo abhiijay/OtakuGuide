@@ -5,6 +5,15 @@
 //   npm run import -- --limit=100   (smoke run, first 100 in Phase B)
 //   npm run import -- --reset       (ignore checkpoint, start over)
 //   npm run import -- --skip-a      (skip Phase A; assumes already done)
+//   npm run refresh         (--refresh + sweep + genre reseed + art;
+//                            the periodic "new season landed" pipeline)
+//
+// --refresh swaps Phase A for an upsert pass against a force-fresh
+// snapshot (new titles inserted, volatile columns updated on existing
+// rows) and limits Phase B to never-attempted rows (synced_at IS NULL),
+// so a refresh costs minutes, not the original ~6 hours. Refuses to run
+// while the source backfill is active — two Jikan crawlers together blow
+// the 60 req/min cap.
 //
 // Three phases, in order:
 //
@@ -40,10 +49,11 @@ const CHECKPOINT_PATH = path.join(__dirname, '..', 'db', 'import-progress.json')
 
 // ---------- CLI arg parsing ----------
 function parseArgs(argv) {
-  const out = { limit: null, reset: false, skipA: false };
+  const out = { limit: null, reset: false, skipA: false, refresh: false };
   for (const a of argv.slice(2)) {
     if (a === '--reset') out.reset = true;
     else if (a === '--skip-a') out.skipA = true;
+    else if (a === '--refresh') out.refresh = true;
     else if (a.startsWith('--limit=')) out.limit = parseInt(a.slice('--limit='.length), 10);
     else throw new Error(`Unknown argument: ${a}`);
   }
@@ -213,6 +223,195 @@ function runPhaseA(records) {
   if (skippedNoTitle) console.log(`  skipped ${skippedNoTitle} records with no title`);
 }
 
+// ---------- Phase A (refresh): upsert against a fresh snapshot ----------
+// The upstream snapshot gains new titles weekly and mutates existing ones
+// (status UPCOMING → ONGOING → FINISHED, scores drift, episode counts
+// grow). This pass inserts rows we've never seen and rewrites the volatile
+// columns on rows we have. It never touches: is_adult (the country sweep
+// owns that flag), synopses/vectors (Phase B owns those), or created_at.
+//
+// Swept non-JP strays DO come back here — they're still in the upstream
+// JSON. That's deliberate: they re-enter with fresh ids above the sweep's
+// checkpoint, so the post-refresh `npm run sweep:country` verifies exactly
+// the new rows and deletes the strays again in seconds. A tombstone table
+// was considered and rejected: the sweep IS the tombstone authority, and
+// this keeps refresh blind to deletion policy.
+const VOLATILE_COLS = [
+  'title_romaji', 'synonyms', 'cover_image_url', 'format', 'episodes',
+  'duration_minutes', 'season', 'season_year', 'status', 'average_score',
+];
+
+function runPhaseARefresh(records) {
+  console.log(`\nPhase A (refresh) — upserting ${records.length.toLocaleString()} snapshot records...`);
+  const t0 = Date.now();
+
+  // Tombstones — deleted rows stay deleted across refreshes. Two sources:
+  //   db/removed-titles.json — hand-deleted NO-ID rows, matched by
+  //     title|year (the sweep can't see rows without an anilist_id).
+  //   db/country-sweep-report.jsonl — sweep-deleted non-JP rows, matched
+  //     by anilist_id. Skipping them here saves Phase B from crawling
+  //     ~2.4K doomed rows (~45 min) every refresh. Report lines written
+  //     before 2026-06-12 lack the anilist_id field; those rows re-enter
+  //     once, the post-refresh sweep re-deletes AND re-reports them with
+  //     the id, so the system converges after one refresh+sweep cycle.
+  let tombstones = new Set();
+  try {
+    const removed = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', 'db', 'removed-titles.json'), 'utf8'),
+    );
+    tombstones = new Set(removed.entries.map((e) => `${e.title}|${e.season_year ?? ''}`));
+  } catch { /* no tombstone file — nothing was ever hand-deleted */ }
+
+  const deadAnilistIds = new Set();
+  try {
+    const reportPath = path.join(__dirname, '..', 'db', 'country-sweep-report.jsonl');
+    for (const line of fs.readFileSync(reportPath, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const e = JSON.parse(line);
+        if (e.action === 'deleted-non-jp' && e.anilist_id != null) deadAnilistIds.add(e.anilist_id);
+      } catch { /* skip malformed report line */ }
+    }
+  } catch { /* no sweep report yet — nothing was ever swept */ }
+
+  // Match priority: anilist_id, then mal_id (both UNIQUE-indexed), then
+  // title+year for the no-ID rows so re-runs don't duplicate them.
+  const byAnilist = db.prepare('SELECT id FROM anime WHERE anilist_id = ?');
+  const byMal = db.prepare('SELECT id FROM anime WHERE mal_id = ?');
+  const byTitleYear = db.prepare(
+    `SELECT id FROM anime
+     WHERE anilist_id IS NULL AND mal_id IS NULL
+       AND title_romaji = ? AND season_year IS ?`,
+  );
+
+  const readVolatile = db.prepare(
+    `SELECT ${VOLATILE_COLS.join(', ')} FROM anime WHERE id = ?`,
+  );
+  const writeVolatile = db.prepare(
+    `UPDATE anime SET ${VOLATILE_COLS.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`,
+  );
+
+  const insertAnime = db.prepare(`
+    INSERT INTO anime (
+      anilist_id, mal_id, title_romaji, synonyms,
+      cover_image_url,
+      format, episodes, duration_minutes, season, season_year, status,
+      average_score, is_adult,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+  `);
+  const insertTag = db.prepare('INSERT OR IGNORE INTO tags (name) VALUES (?)');
+  const selectTag = db.prepare('SELECT id FROM tags WHERE name = ?');
+  const joinTag = db.prepare(
+    'INSERT OR IGNORE INTO anime_tags (anime_id, tag_id) VALUES (?, ?)',
+  );
+  const insertStudio = db.prepare(
+    'INSERT OR IGNORE INTO studios (name) VALUES (?)',
+  );
+  const selectStudio = db.prepare('SELECT id FROM studios WHERE name = ?');
+  const joinStudio = db.prepare(
+    'INSERT OR IGNORE INTO anime_studios (anime_id, studio_id, is_main) VALUES (?, ?, ?)',
+  );
+
+  const nowStr = now();
+  let inserted = 0;
+  let updated = 0;
+  let unchanged = 0;
+  let skippedNoTitle = 0;
+  let skippedTombstone = 0;
+
+  db.exec('BEGIN');
+  try {
+    for (const rec of records) {
+      if (!rec.title) {
+        skippedNoTitle++;
+        continue;
+      }
+      if (
+        tombstones.has(`${rec.title}|${rec.season_year ?? ''}`) ||
+        (rec.anilist_id != null && deadAnilistIds.has(rec.anilist_id))
+      ) {
+        skippedTombstone++;
+        continue;
+      }
+      const fresh = {
+        title_romaji: rec.title,
+        synonyms: rec.synonyms?.length ? JSON.stringify(rec.synonyms) : null,
+        cover_image_url: rec.cover_image_url ?? null,
+        format: rec.format ?? null,
+        episodes: rec.episodes ?? null,
+        duration_minutes: rec.duration_minutes ?? null,
+        season: rec.season ?? null,
+        season_year: rec.season_year ?? null,
+        status: rec.status ?? null,
+        average_score: rec.average_score ?? null,
+      };
+
+      const found =
+        (rec.anilist_id != null && byAnilist.get(rec.anilist_id)) ||
+        (rec.mal_id != null && byMal.get(rec.mal_id)) ||
+        byTitleYear.get(rec.title, rec.season_year ?? null);
+
+      let animeId;
+      if (found) {
+        animeId = found.id;
+        // Write only on real change — keeps the WAL free of no-op writes
+        // and makes the updated-count honest.
+        const cur = readVolatile.get(animeId);
+        const dirty = VOLATILE_COLS.some((c) => (cur[c] ?? null) !== fresh[c]);
+        if (dirty) {
+          writeVolatile.run(...VOLATILE_COLS.map((c) => fresh[c]), animeId);
+          updated++;
+        } else {
+          unchanged++;
+        }
+      } else {
+        const result = insertAnime.run(
+          rec.anilist_id,
+          rec.mal_id,
+          fresh.title_romaji,
+          fresh.synonyms,
+          fresh.cover_image_url,
+          fresh.format,
+          fresh.episodes,
+          fresh.duration_minutes,
+          fresh.season,
+          fresh.season_year,
+          fresh.status,
+          fresh.average_score,
+          nowStr,
+        );
+        animeId = result.lastInsertRowid;
+        inserted++;
+      }
+
+      // Merge tags + studios for both paths — upstream grows these too.
+      for (const tag of rec.tags || []) {
+        const n = normalizeTag(tag);
+        if (!n) continue;
+        insertTag.run(n);
+        joinTag.run(animeId, selectTag.get(n).id);
+      }
+      for (const studio of rec.studios || []) {
+        if (!studio) continue;
+        insertStudio.run(studio);
+        joinStudio.run(animeId, selectStudio.get(studio).id, 1);
+      }
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  console.log(`  inserted: ${inserted.toLocaleString()} new anime`);
+  console.log(`  updated:  ${updated.toLocaleString()} volatile-column changes (${unchanged.toLocaleString()} unchanged)`);
+  if (skippedNoTitle) console.log(`  skipped ${skippedNoTitle} records with no title`);
+  if (skippedTombstone) console.log(`  skipped ${skippedTombstone} tombstoned titles (db/removed-titles.json)`);
+  console.log(`  done in ${fmtDuration(Date.now() - t0)}`);
+  return { inserted, updated };
+}
+
 // ---------- Phase B: per-anime synopsis enrichment ----------
 async function runPhaseB(opts) {
   console.log('\nPhase B — fetching synopses and embedding...');
@@ -228,10 +427,14 @@ async function runPhaseB(opts) {
   //   - If the import dies partway through we have the classic catalog
   //     covered first, then progressively newer titles.
   //   - id ASC tiebreaker for deterministic resume.
+  // In refresh mode, only rows never attempted before (Phase B stamps
+  // synced_at on every attempt, hit or miss) — otherwise each refresh
+  // would re-crawl the ~12K known synopsis misses for hours.
   let sql = `
     SELECT id, mal_id, title_romaji
     FROM anime
     WHERE synopsis_vec IS NULL
+      ${opts.refresh ? 'AND synced_at IS NULL' : ''}
       AND (mal_id IS NOT NULL OR title_romaji IS NOT NULL)
     ORDER BY mal_id ASC NULLS LAST, id ASC
   `;
@@ -436,11 +639,27 @@ process.on('SIGINT', () => {
     console.log('Checkpoint cleared.');
   }
 
+  if (opts.refresh) {
+    // This run's Phase B and scripts/backfill-source.js both crawl Jikan;
+    // each process paces itself to ~55 req/min, so two at once blow the
+    // 60/min cap (the 429 storm of 2026-06-12). Refuse to start while the
+    // backfill looks alive.
+    const backfillLog = path.join(__dirname, '..', 'db', 'source-backfill.log');
+    if (fs.existsSync(backfillLog) && Date.now() - fs.statSync(backfillLog).mtimeMs < 10 * 60 * 1000) {
+      console.error('source backfill looks active (db/source-backfill.log written < 10 min ago).');
+      console.error('Refresh after it finishes — two Jikan crawlers together trip the 60 req/min cap.');
+      process.exit(1);
+    }
+  }
+
   console.log('Loading offline-database snapshot...');
-  const { lastUpdate, records } = await loadOfflineDb();
+  // A refresh exists to pick up the newest weekly snapshot — never settle
+  // for the cached copy.
+  const { lastUpdate, records } = await loadOfflineDb({ force: opts.refresh });
   console.log(`  ${records.length.toLocaleString()} records, snapshot ${lastUpdate}`);
 
-  if (!opts.skipA) runPhaseA(records);
+  if (opts.refresh) runPhaseARefresh(records);
+  else if (!opts.skipA) runPhaseA(records);
   await runPhaseB(opts);
   runPhaseC(records);
 

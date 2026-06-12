@@ -66,7 +66,9 @@ function report(entry) {
       if (m.countryOfOrigin && m.countryOfOrigin !== 'JP') {
         deleteAnime.run(row.id);
         removed += 1;
-        report({ action: 'deleted-non-jp', id: row.id, title: row.title_romaji, country: m.countryOfOrigin });
+        // anilist_id doubles as a refresh tombstone — import --refresh
+        // skips re-inserting ids reported here (see runPhaseARefresh).
+        report({ action: 'deleted-non-jp', id: row.id, anilist_id: row.anilist_id, title: row.title_romaji, country: m.countryOfOrigin });
       } else if (m.isAdult) {
         flagAdult.run(row.id);
         flagged += 1;

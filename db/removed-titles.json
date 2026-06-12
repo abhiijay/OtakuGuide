@@ -1,0 +1,7 @@
+{
+  "_comment": "Manual-delete tombstones for catalog entries with NO anilist_id/mal_id. The country sweep re-deletes ID-carrying strays after every refresh, but no-ID rows are invisible to it — without this file, `npm run import -- --refresh` would resurrect them from the upstream snapshot forever. Matched by exact (title, season_year). Append an entry whenever a no-ID row is deleted by hand.",
+  "entries": [
+    { "title": "Kan Kluai", "season_year": 2006, "reason": "Thai CG film (non-JP); deleted 2026-06-12, see db/country-sweep-report.jsonl" },
+    { "title": "Kan Kluai 2", "season_year": 2009, "reason": "Thai CG film (non-JP); deleted 2026-06-12, see db/country-sweep-report.jsonl" }
+  ]
+}
