@@ -1,0 +1,69 @@
+<%# Airing — the simulcast board. Receives from pages.js:
+      konki        — { season, year } (current anime season)
+      thisSeason   — RELEASING rows from the current season, by popularity
+      continuing   — RELEASING rows from earlier seasons (long-runners),
+                     by popularity
+    Same paper-page grammar as the catalog; cover-card grid throughout. %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head', { title: 'Airing' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('partials/frame') %>
+  <%- include('partials/nav') %>
+
+  <main class="relative mx-auto max-w-6xl overflow-hidden px-6 py-12">
+    <span class="pointer-events-none absolute -right-10 -top-14 select-none font-serif text-[15rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">放</span>
+
+    <div class="reveal relative">
+      <%# ——— Header ——— %>
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <h1>
+          <span class="relative inline-block font-serif text-4xl font-extrabold tracking-tight">
+            <span class="absolute -inset-x-4 -inset-y-1.5 -rotate-1 bg-sakura" aria-hidden="true"></span>
+            <span class="relative text-paper">放送中</span>
+          </span>
+          <span class="jp-sub mt-3">housouchuu — on air · the simulcast board</span>
+        </h1>
+        <p class="meta"><%= (thisSeason.length + continuing.length).toLocaleString('en-US') %> airing · <%= konki.season.toLowerCase() %> <%= konki.year %> · by popularity</p>
+      </div>
+
+      <%# ——— This season's new shows ——— %>
+      <% if (thisSeason.length) { %>
+      <h2 class="mt-12">
+        <span class="font-serif text-2xl font-extrabold tracking-tight text-sakura">今季の新作</span>
+        <span class="jp-sub">konki no shinsaku — new this season · <%= thisSeason.length %> titles</span>
+      </h2>
+      <div class="mt-6 grid grid-cols-2 gap-x-5 gap-y-8 border-t border-ink/80 pt-8 sm:grid-cols-4 lg:grid-cols-6">
+        <% thisSeason.forEach((a) => { %>
+        <%- include('partials/cover-card', { a, dark: false }) %>
+        <% }) %>
+      </div>
+      <% } %>
+
+      <%# ——— Continuing from earlier seasons ——— %>
+      <% if (continuing.length) { %>
+      <h2 class="mt-14">
+        <span class="font-serif text-2xl font-extrabold tracking-tight">続行中</span>
+        <span class="jp-sub">zokkouchuu — continuing · long-runners and carryovers · <%= continuing.length %> titles</span>
+      </h2>
+      <div class="mt-6 grid grid-cols-2 gap-x-5 gap-y-8 border-t border-ink/80 pt-8 sm:grid-cols-4 lg:grid-cols-6">
+        <% continuing.forEach((a) => { %>
+        <%- include('partials/cover-card', { a, dark: false }) %>
+        <% }) %>
+      </div>
+      <% } %>
+
+      <% if (!thisSeason.length && !continuing.length) { %>
+      <div class="mt-10 border-t border-ink/80 pt-16 text-center">
+        <p class="font-serif text-3xl font-extrabold tracking-tight">何もない。</p>
+        <p class="jp-sub mx-auto mt-2">nanimo nai — nothing on air. run npm run sync:recent.</p>
+      </div>
+      <% } %>
+    </div>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>

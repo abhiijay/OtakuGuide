@@ -49,6 +49,14 @@ const CATALOG_PAGE_SIZE = 48;
 const CATALOG_FORMATS = ['TV', 'MOVIE', 'OVA', 'ONA', 'SPECIAL'];
 const CATALOG_DECADES = [1960, 1970, 1980, 1990, 2000, 2010, 2020];
 
+// Current anime season (WINTER Jan-Mar / SPRING / SUMMER / FALL) — used by
+// the home 今季 rail and the /airing board.
+const SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
+function currentSeason() {
+  const d = new Date();
+  return { season: SEASONS[Math.floor(d.getMonth() / 3)], year: d.getFullYear() };
+}
+
 // 注目 — draw one random tag and return its shelf's top-scored title
 // ("Steins;Gate — best of the memory-manipulation shelf"). Used by the
 // home page on every load and by GET /focus for in-place redraws.
@@ -151,11 +159,7 @@ router.get('/', (req, res) => {
     // season, actually out (RELEASING or FINISHED — never NOT_YET_RELEASED).
     // Sorted by AniList popularity (live via sync-recent) so the rail leads
     // with what people are actually watching, not tiny-sample scores.
-    const SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
-    const konki = {
-      season: SEASONS[Math.floor(new Date().getMonth() / 3)],
-      year: new Date().getFullYear(),
-    };
+    const konki = currentSeason();
     rails = [
       {
         jp: '今季',
@@ -243,6 +247,39 @@ router.get('/focus', (req, res) => {
   catch (err) { console.error('focus: draw failed —', err.message); }
   if (!focus) return res.status(204).end();
   res.render('partials/focus-window', { focus });
+});
+
+// ---------------------------------------------------------------------------
+// Airing — the simulcast board. Everything currently RELEASING, split into
+// this season's new shows and the continuing carryovers (long-runners,
+// multi-cour holdovers). Sorted by live AniList popularity (sync-recent
+// keeps it fresh) — what people are actually watching, not tiny-sample
+// scores. No QUALITY filter: airing shows aren't FINISHED and often have
+// no score yet; the floor here is provenance + cover.
+// ---------------------------------------------------------------------------
+router.get('/airing', (req, res) => {
+  const konki = currentSeason();
+  const AIRING_BASE = `
+    SELECT a.id, a.title_romaji, a.cover_image_url, a.cover_image_xl,
+           a.season_year, a.format, a.episodes, a.average_score
+    FROM anime a
+    WHERE a.status = 'RELEASING'
+      AND a.is_adult = 0
+      AND a.cover_image_url IS NOT NULL
+      AND (a.anilist_id IS NOT NULL OR a.mal_id IS NOT NULL)`;
+  const ORDER = 'ORDER BY a.popularity DESC NULLS LAST, COALESCE(a.average_score, 0) DESC';
+
+  const thisSeason = db
+    .prepare(`${AIRING_BASE} AND a.season = ? AND a.season_year = ? ${ORDER}`)
+    .all(konki.season, konki.year);
+  const continuing = db
+    .prepare(`${AIRING_BASE} AND NOT (a.season = ? AND a.season_year = ?) ${ORDER}`)
+    .all(konki.season, konki.year);
+  [...thisSeason, ...continuing].forEach((a) => {
+    a.cover_large = a.cover_image_xl || largeCover(a.cover_image_url);
+  });
+
+  res.render('airing', { active: 'airing', konki, thisSeason, continuing });
 });
 
 // ---------------------------------------------------------------------------
