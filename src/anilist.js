@@ -139,6 +139,53 @@ const ANIME_BATCH_QUERY = `
   }
 `;
 
+// Seasonal page query — everything airing/released in one season. Used by
+// scripts/sync-recent.js to keep the newest titles fresh while the
+// offline-database snapshot lags (its "latest" release sat 10 weeks stale
+// on 2026-06-12). One season is ~300-500 titles ≈ ≤10 pages — Page depth
+// stays far under the 5000 cap, and hasNextPage (the one reliable
+// pageInfo field) bounds the loop. This is client-scale use, not the
+// bulk collection AniList's TOS forbids.
+// Fields are the batch query's MINUS characters/relations/recommendations
+// (not needed for a freshness sync — keeps the response light).
+const SEASON_PAGE_QUERY = `
+  query SeasonPage($season: MediaSeason!, $year: Int!, $page: Int!) {
+    Page(page: $page, perPage: 50) {
+      pageInfo { hasNextPage }
+      media(
+        type: ANIME
+        countryOfOrigin: "JP"
+        isAdult: false
+        season: $season
+        seasonYear: $year
+      ) {
+        id
+        idMal
+        title { romaji english native }
+        coverImage { large extraLarge }
+        bannerImage
+        episodes
+        duration
+        season
+        seasonYear
+        format
+        source
+        status
+        averageScore
+        popularity
+        genres
+        tags { name isAdult }
+        studios {
+          edges {
+            isMain
+            node { name }
+          }
+        }
+      }
+    }
+  }
+`;
+
 // Lightweight verification query — country + adult flag only, WITHOUT the
 // baked-in filters, so the caller can see WHY an id doesn't belong
 // (non-JP vs adult). Used by scripts/sweep-country.js.
@@ -149,6 +196,20 @@ const COUNTRY_BATCH_QUERY = `
         id
         countryOfOrigin
         isAdult
+      }
+    }
+  }
+`;
+
+// Popularity (how many AniList users track the title) — the vote-count
+// proxy for damped score ranking + signal #11's quality floor. Fetched
+// without standing filters, same shape as the country sweep.
+const POPULARITY_BATCH_QUERY = `
+  query PopularityBatch($ids: [Int!]!) {
+    Page(page: 1, perPage: 50) {
+      media(type: ANIME, id_in: $ids) {
+        id
+        popularity
       }
     }
   }
@@ -268,10 +329,42 @@ async function fetchCountryBatchByIds(ids) {
   return data.data.Page.media;
 }
 
+// Fetches { id, popularity } for up to 50 AniList IDs, no standing
+// filters — ids absent from the response are deleted on AniList's side.
+// Used by scripts/backfill-popularity.js.
+async function fetchPopularityBatchByIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > ID_BATCH_SIZE) {
+    throw new Error(`fetchPopularityBatchByIds requires 1-${ID_BATCH_SIZE} ids`);
+  }
+  const data = await fetchWithRetry({ query: POPULARITY_BATCH_QUERY, variables: { ids } });
+  if (data.errors) {
+    throw new Error(`AniList GraphQL: ${JSON.stringify(data.errors)}`);
+  }
+  return data.data.Page.media;
+}
+
+// Fetches one page of a season's anime (50 per page). Returns
+// { media, hasNextPage } — loop pages until hasNextPage is false.
+async function fetchSeasonPage(season, year, page) {
+  const data = await fetchWithRetry({
+    query: SEASON_PAGE_QUERY,
+    variables: { season, year, page },
+  });
+  if (data.errors) {
+    throw new Error(`AniList GraphQL: ${JSON.stringify(data.errors)}`);
+  }
+  return {
+    media: data.data.Page.media,
+    hasNextPage: data.data.Page.pageInfo.hasNextPage,
+  };
+}
+
 module.exports = {
   fetchHighestAnimeId,
   fetchAnimeBatchByIds,
   fetchCountryBatchByIds,
+  fetchPopularityBatchByIds,
+  fetchSeasonPage,
   ID_BATCH_SIZE,
 };
 

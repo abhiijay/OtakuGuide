@@ -233,12 +233,13 @@
           <li class="group w-52 shrink-0" <%- copy === 1 ? 'aria-hidden="true"' : '' %>>
             <a href="/anime/<%= a.id %>" class="block" <%- copy === 1 ? 'tabindex="-1"' : '' %>>
             <div class="cover-lift relative h-[19.5rem] w-52 overflow-hidden border border-paper/20">
-              <img src="<%= a.cover_large %>" alt="" loading="lazy"
+              <img src="<%= a.cover_image_xl || a.cover_large %>" alt="" loading="lazy"
                 class="cover-img h-full w-full"
                 onerror="this.onerror=null;this.src='<%= a.cover_image_url %>'" />
-              <%# Hover card — the stats behind the poster %>
+              <%# Hover card — the stats behind the poster. Airing titles may
+                  not have a score yet — show 未定 (TBD) instead of crashing. %>
               <div class="absolute inset-0 flex flex-col justify-end bg-night/85 p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                <p class="font-serif text-3xl font-extrabold tracking-tight text-sakura tabular-nums"><%= a.average_score.toFixed(2) %></p>
+                <p class="font-serif text-3xl font-extrabold tracking-tight text-sakura tabular-nums"><%= a.average_score != null ? a.average_score.toFixed(2) : '未定' %></p>
                 <p class="meta mt-1"><%= [a.season_year, a.format, a.episodes ? a.episodes + ' ep' : null].filter(Boolean).join(' · ') %></p>
                 <% if (a.synopsis_snip) { %>
                 <p class="mt-2 line-clamp-4 text-[11px] leading-relaxed text-paper/85"><%= a.synopsis_snip %>…</p>

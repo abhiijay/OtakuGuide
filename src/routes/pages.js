@@ -37,8 +37,12 @@ const QUALITY =
 // MAL serves covers in multiple sizes; the catalog stores the default
 // (~225px wide). The 'l' variant (~425px) keeps large renders sharp.
 // Some entries lack the variant — img tags fall back via onerror.
+// AniList-hosted covers (rows from sync-recent) have no size-suffix trick;
+// transforming them would just guarantee a 404 round-trip, so pass them
+// through — those rows carry cover_image_xl anyway.
 function largeCover(url) {
-  return url ? url.replace(/\.(jpe?g|png|webp)$/i, 'l.$1') : url;
+  if (!url || !url.includes('myanimelist')) return url;
+  return url.replace(/\.(jpe?g|png|webp)$/i, 'l.$1');
 }
 
 const CATALOG_PAGE_SIZE = 48;
@@ -141,7 +145,36 @@ router.get('/', (req, res) => {
 
     // Content rails for the dark act. Genre rails replace/join these once the
     // genre backfill lands; until then we rail on format, era, and tags.
+    //
+    // The 今季 rail can't use QUALITY (it requires FINISHED + a score —
+    // airing shows have neither). Its own floor: provenance + cover, this
+    // season, actually out (RELEASING or FINISHED — never NOT_YET_RELEASED).
+    // Sorted by AniList popularity (live via sync-recent) so the rail leads
+    // with what people are actually watching, not tiny-sample scores.
+    const SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
+    const konki = {
+      season: SEASONS[Math.floor(new Date().getMonth() / 3)],
+      year: new Date().getFullYear(),
+    };
     rails = [
+      {
+        jp: '今季',
+        sub: `konki — this season · ${konki.season.toLowerCase()} ${konki.year}, airing now`,
+        items: db
+          .prepare(
+            `SELECT a.id, title_romaji, cover_image_url, cover_image_xl, season_year, average_score,
+                    format, episodes, substr(synopsis_mal, 1, 180) AS synopsis_snip
+             FROM anime a
+             WHERE a.is_adult = 0
+               AND a.cover_image_url IS NOT NULL
+               AND (a.anilist_id IS NOT NULL OR a.mal_id IS NOT NULL)
+               AND a.season = ? AND a.season_year = ?
+               AND a.status IN ('RELEASING', 'FINISHED')
+             ORDER BY a.popularity DESC NULLS LAST, a.average_score DESC
+             LIMIT 12`
+          )
+          .all(konki.season, konki.year),
+      },
       {
         jp: '映画',
         sub: 'eiga — cinema · the top movies',
@@ -423,10 +456,45 @@ router.get('/anime/:id', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// How it works — plain-English docs for the recommender.
+// How it works — the docs, as a small system of pages. The index holds the
+// brief + TLDR + chapter map; each chapter page explains one part of the
+// engine in depth (user direction 2026-06-12: not everything in one go).
+// Chapters are whitelisted here; unknown slugs 404. Views live in views/docs/.
 // ---------------------------------------------------------------------------
+const DOC_CHAPTERS = [
+  {
+    slug: 'library', num: '01', kanji: '蔵書', reading: 'zousho', title: 'The library',
+    tease: 'Where the catalog, the two summaries, the tags and the studios come from, and what gets swept out.',
+  },
+  {
+    slug: 'fingerprints', num: '02', kanji: '指紋', reading: 'shimon', title: 'The fingerprints',
+    tease: 'How a machine reads a synopsis: meaning turned into 384 numbers, and how two stories are compared.',
+  },
+  {
+    slug: 'signals', num: '03', kanji: '信号', reading: 'shingou', title: 'The signals',
+    tease: 'All twelve measurements, what each one knows about a show, and its honest status today.',
+  },
+  {
+    slug: 'ranking', num: '04', kanji: '番付', reading: 'banzuke', title: 'The ranking',
+    tease: 'How the votes merge into one list, why a franchise is stopped at the gate, and what the slider does.',
+  },
+];
+
 router.get('/how-it-works', (req, res) => {
-  res.render('how-it-works', { active: 'docs', signals: SIGNALS });
+  res.render('how-it-works', { active: 'docs', chapters: DOC_CHAPTERS });
+});
+
+router.get('/how-it-works/:slug', (req, res) => {
+  const i = DOC_CHAPTERS.findIndex((c) => c.slug === req.params.slug);
+  if (i === -1) return res.status(404).send('404 — 見つかりません · not found');
+  res.render(`docs/${DOC_CHAPTERS[i].slug}`, {
+    active: 'docs',
+    chapters: DOC_CHAPTERS,
+    chapter: DOC_CHAPTERS[i],
+    prev: i > 0 ? DOC_CHAPTERS[i - 1] : null,
+    next: i < DOC_CHAPTERS.length - 1 ? DOC_CHAPTERS[i + 1] : null,
+    signals: SIGNALS,
+  });
 });
 
 module.exports = router;
