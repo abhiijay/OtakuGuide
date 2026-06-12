@@ -4,6 +4,13 @@
 // scripts/seed-genres-from-tags.js; a MAL genre crawl was attempted and
 // abandoned (MAL genre ids collide with our genre table's ids).
 //
+// Since 2026-06-12 it ALSO fills anime.popularity (MAL `members`) for rows
+// the AniList popularity backfill can't reach — same fetch, zero extra
+// requests. Guarded with `popularity IS NULL` so AniList's number (the
+// canonical scale, scripts/backfill-popularity.js) always wins for rows
+// both sides know. Rows this crawl passed before 2026-06-12 are caught by
+// backfill-popularity's Jikan leftover phase (run it after this completes).
+//
 // Hits Jikan once per anime with a mal_id and no source yet (~30K calls at
 // ~55/min ≈ 8-9h). Resumable: checkpoint at db/source-backfill-progress.json.
 // Run unattended (detached — survives the launching terminal/session):
@@ -21,6 +28,9 @@ db.pragma('busy_timeout = 10000');
 
 const CHECKPOINT = path.join(__dirname, '..', 'db', 'source-backfill-progress.json');
 const setSource = db.prepare('UPDATE anime SET source = ? WHERE id = ?');
+const setPopularity = db.prepare(
+  'UPDATE anime SET popularity = ? WHERE id = ? AND popularity IS NULL'
+);
 
 function loadCheckpoint() {
   try { return JSON.parse(fs.readFileSync(CHECKPOINT, 'utf8')).lastId || 0; }
@@ -53,6 +63,7 @@ function saveCheckpoint(lastId) {
     }
     if (detail && detail.source) setSource.run(detail.source, row.id);
     else misses += 1;
+    if (detail && detail.members !== null) setPopularity.run(detail.members, row.id);
     done += 1;
     saveCheckpoint(row.id);
     if (done % 200 === 0) {

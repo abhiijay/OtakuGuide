@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS anime (
 
   -- Quality / popularity (Sub-group D — RE-RANKING ONLY, never inputs to similarity vectors — signal #11)
   average_score     REAL,                       -- AniList averageScore 0-100 (vote-count weighted); NULL if too few ratings
-  popularity        INTEGER,                    -- AniList popularity count (users tracking it)
+  popularity        INTEGER,                    -- people tracking it: AniList popularity (backfill-popularity.js), or MAL members for rows AniList doesn't know (backfill-source.js). Different scales (MAL ~5x larger user base) — fine for damped ranking, don't compare raw across rows blindly
 
   -- Filter flag (decision 2026-06-08: filter centralized in src/db.js, no user toggle)
   is_adult          INTEGER NOT NULL DEFAULT 0, -- AniList isAdult (explicit sexual content only; gore/violence don't trigger it)

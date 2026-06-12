@@ -31,3 +31,4 @@ logs/
 .DS_Store
 .vscode/
 .idea/
+db/popularity-backfill-progress.json

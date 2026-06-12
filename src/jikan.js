@@ -131,6 +131,7 @@ async function fetchAnime(mal_id) {
   return {
     synopsis: stripAttribution(d.synopsis || ''),
     source: d.source || null, // 'Manga' | 'Light novel' | 'Original' | ... — signal #7
+    members: typeof d.members === 'number' ? d.members : null, // MAL users tracking it — popularity for rows AniList doesn't know
     genres: (d.genres || []).map((t) => ({ mal_id: t.mal_id, name: t.name })),
     themes: (d.themes || []).map((t) => ({ mal_id: t.mal_id, name: t.name })),
     demographics: (d.demographics || []).map((t) => ({ mal_id: t.mal_id, name: t.name })),
