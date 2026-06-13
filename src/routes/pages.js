@@ -5,7 +5,12 @@
 
 const express = require('express');
 const { db } = require('../db');
-const { recommendFromAnime, franchiseIds, titlesAreKin } = require('../recommender');
+const {
+  recommendFromAnime,
+  recommendFromUser,
+  franchiseIds,
+  titlesAreKin,
+} = require('../recommender');
 const { SIGNALS } = require('../signals');
 const { requireAuth, findExternalAccount, completeOnboarding } = require('../auth');
 const { PLACEHOLDER_KEYS, placeholderPath } = require('../avatar');
@@ -420,6 +425,9 @@ function hydrateRecs(ranked) {
       cover_large: largeCover(byId.get(r.id).cover_image_url),
       match: r.score,
       signals: r.signals,
+      // recommendFromUser anchors each pick to the seed it's closest to
+      // ("because you loved X"); undefined for anime-page recs, harmless there.
+      because: r.because,
     }));
 }
 
@@ -516,7 +524,65 @@ router.get('/anime/:id', (req, res) => {
     console.error(`recommendations failed for anime ${id} —`, err.message);
   }
 
-  res.render('anime', { active: '', a, tags, studios, related, recs, storyPct });
+  // The signed-in user's own list entry for this anime (or null), so the page
+  // can render the track panel in its current state. Anonymous → null.
+  const entry = req.user ? library.getEntry(req.user.id, id) : null;
+
+  res.render('anime', { active: '', a, tags, studios, related, recs, storyPct, entry });
+});
+
+// ---------------------------------------------------------------------------
+// Library — the signed-in user's tracked list + a personal "for you" rail.
+// Server-rendered (matching every other page here) so it works without JS; the
+// status filter is a plain ?status= link, not a fetch. The track controls that
+// fill this list live on the anime page (public/js/track.js → /api/library).
+// ---------------------------------------------------------------------------
+const LIBRARY_TABS = [
+  ['WATCHING', 'watching'],
+  ['REWATCHING', 'rewatching'],
+  ['COMPLETED', 'completed'],
+  ['PLANNING', 'planning'],
+  ['PAUSED', 'paused'],
+  ['DROPPED', 'dropped'],
+];
+
+router.get('/library', requireAuth, (req, res) => {
+  const userId = req.user.id;
+
+  // One DB read for the whole list; counts come from it and the status filter
+  // is applied in JS, so a tab is always counted against the full list.
+  const all = library.getLibrary(userId);
+  const counts = {};
+  LIBRARY_TABS.forEach(([s]) => (counts[s] = 0));
+  all.forEach((e) => {
+    if (counts[e.status] != null) counts[e.status]++;
+  });
+
+  const valid = LIBRARY_TABS.some(([s]) => s === req.query.status);
+  const status = valid ? req.query.status : null;
+  const entries = status ? all.filter((e) => e.status === status) : all;
+  entries.forEach((e) => {
+    e.cover_large = largeCover(e.cover_image_url);
+  });
+
+  // "For you" — personal recs from the taste vector. Empty until the list
+  // carries a usable signal (recommendFromUser returns [] otherwise).
+  let recs = [];
+  try {
+    recs = hydrateRecs(recommendFromUser(userId, { limit: 18 }));
+  } catch (err) {
+    console.error(`library recommendations failed for user ${userId} —`, err.message);
+  }
+
+  res.render('library', {
+    active: 'library',
+    tabs: LIBRARY_TABS,
+    counts,
+    total: all.length,
+    status,
+    entries,
+    recs,
+  });
 });
 
 // ---------------------------------------------------------------------------

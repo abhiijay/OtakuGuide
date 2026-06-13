@@ -59,6 +59,65 @@
             <% }) %>
           </div>
           <% } %>
+
+          <%# ——— Track panel — add this anime to your list ———
+              Logged out → an invitation to log in. Logged in → status + score +
+              favorite, reflecting the user's current entry (passed as `entry`,
+              null if not on the list). public/js/track.js wires the controls to
+              PUT/DELETE /api/library/:id; the list API is fetch+CSRF only, so
+              this panel needs JS (the noscript note says so) — a deliberate
+              departure from the no-JS catalog, since tracking is a logged-in
+              interactive feature, not crawlable content. %>
+          <% if (typeof user !== 'undefined' && user) {
+               var sVal = entry && entry.score != null ? Math.round(entry.score / 10) : '';
+               var statuses = [
+                 ['WATCHING', 'watching'], ['COMPLETED', 'completed'],
+                 ['PLANNING', 'planning'], ['PAUSED', 'paused'],
+                 ['DROPPED', 'dropped'], ['REWATCHING', 'rewatching'],
+               ]; %>
+          <div class="track-panel mt-8 border border-paper/20 p-4"
+               data-anime-id="<%= a.id %>" data-csrf="<%= csrfToken %>"
+               data-has-entry="<%= entry ? '1' : '' %>">
+            <div class="flex items-center justify-between gap-3">
+              <p class="meta text-paper/60">［記録］ my list</p>
+              <span class="track-status meta tabular-nums text-sakura"><%= entry ? entry.status.toLowerCase() : 'not tracked' %></span>
+            </div>
+
+            <div class="mt-4 flex flex-wrap gap-2">
+              <% statuses.forEach((s) => { %>
+              <button type="button" data-status="<%= s[0] %>"
+                class="track-set meta border px-2 py-1 transition-colors hover:border-sakura hover:text-sakura <%= entry && entry.status === s[0] ? 'border-sakura text-sakura' : 'border-paper/25 text-paper/80' %>"><%= s[1] %></button>
+              <% }) %>
+            </div>
+
+            <div class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
+              <label class="meta flex items-center gap-2 text-paper/70">
+                score
+                <select data-score class="border border-paper/25 bg-night px-2 py-1 text-paper">
+                  <option value="" <%= sVal === '' ? 'selected' : '' %>>—</option>
+                  <% for (var n = 10; n >= 1; n--) { %>
+                  <option value="<%= n %>" <%= sVal === n ? 'selected' : '' %>><%= n %></option>
+                  <% } %>
+                </select>
+              </label>
+              <button type="button" data-fav
+                class="track-fav meta border px-2 py-1 transition-colors hover:border-sakura <%= entry && entry.is_favorite ? 'border-sakura text-sakura' : 'border-paper/25 text-paper/70' %>"
+                aria-pressed="<%= entry && entry.is_favorite ? 'true' : 'false' %>">
+                <span aria-hidden="true"><%= entry && entry.is_favorite ? '★' : '☆' %></span> favorite
+              </button>
+              <button type="button" data-remove
+                class="track-remove meta ml-auto border border-paper/20 px-2 py-1 text-paper/50 transition-colors hover:border-sakura hover:text-sakura <%= entry ? '' : 'hidden' %>">remove</button>
+            </div>
+
+            <p class="track-msg meta mt-3 hidden text-paper/50" role="status" aria-live="polite"></p>
+            <noscript><p class="meta mt-3 text-paper/50">tracking needs javascript enabled.</p></noscript>
+          </div>
+          <% } else { %>
+          <div class="mt-8 border border-paper/20 p-4">
+            <p class="meta text-paper/60">［記録］ my list</p>
+            <p class="mt-2 text-sm text-paper/80"><a href="/login" class="text-sakura underline-offset-4 hover:underline">log in</a> to track this anime, rate it, and feed your recommendations.</p>
+          </div>
+          <% } %>
         </div>
       </div>
     </section>
@@ -144,5 +203,6 @@
   </main>
 
   <%- include('partials/footer') %>
+  <script src="/js/track.js" defer></script>
 </body>
 </html>

@@ -1,0 +1,119 @@
+<%# Library — the signed-in user's tracked list + a personal "for you" rail.
+    Receives from pages.js:
+      tabs    — [[STATUS, label]] status filter tabs
+      counts  — { STATUS: n } per-status counts over the whole list
+      total   — list size (all statuses)
+      status  — the active status filter, or null for "all"
+      entries — getLibrary rows (anime_id, status, score, is_favorite,
+                title_romaji, cover_large, season_year, format, …), filtered
+      recs    — hydrated recommendFromUser rows (id, title_romaji, cover_large,
+                average_score, because?) — empty until the list has a signal %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head', { title: 'Library' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('partials/frame') %>
+  <%- include('partials/nav') %>
+
+  <main>
+    <%# ——— Header ——— %>
+    <section class="relative mx-auto max-w-6xl overflow-hidden px-6 py-12">
+      <span class="pointer-events-none absolute -right-10 -top-14 select-none font-serif text-[15rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">蔵</span>
+      <div class="reveal relative flex flex-wrap items-end justify-between gap-4">
+        <h1>
+          <span class="relative inline-block font-serif text-4xl font-extrabold tracking-tight">
+            <span class="absolute -inset-x-4 -inset-y-1.5 -rotate-1 bg-sakura" aria-hidden="true"></span>
+            <span class="relative text-paper">蔵書</span>
+          </span>
+          <span class="jp-sub mt-3">zousho — your library · everything you track</span>
+        </h1>
+        <p class="meta"><%= total.toLocaleString('en-US') %> title<%= total === 1 ? '' : 's' %> tracked</p>
+      </div>
+    </section>
+
+    <%# ——— For you — personal recommendations from the taste vector ——— %>
+    <% if (recs.length) { %>
+    <section class="dark-act relative overflow-hidden border-y border-night bg-night py-14 text-paper">
+      <span class="pointer-events-none absolute -right-8 -top-8 select-none font-serif text-[14rem] font-extrabold leading-none text-paper/[0.04]" aria-hidden="true">糸</span>
+      <div class="relative mx-auto max-w-6xl px-6">
+        <div class="mb-8 flex items-end justify-between gap-4">
+          <h2>
+            <span class="relative inline-block font-serif text-3xl font-extrabold tracking-tight">
+              <span class="absolute -inset-x-4 -inset-y-1.5 -rotate-2 bg-sakura" aria-hidden="true"></span>
+              <span class="relative text-paper">あなたへ</span>
+            </span>
+            <span class="jp-sub mt-3">anata e — for you · drawn from your list</span>
+          </h2>
+          <a href="/how-it-works" class="nav-tab hidden text-paper sm:block">how this works</a>
+        </div>
+        <div class="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 lg:grid-cols-6">
+          <% recs.forEach((r) => { %>
+          <div>
+            <%- include('partials/cover-card', { a: r, dark: true }) %>
+            <% if (r.because) { %>
+            <p class="meta mt-1 text-paper/45">because you loved <%= r.because.title %></p>
+            <% } %>
+          </div>
+          <% }) %>
+        </div>
+      </div>
+    </section>
+    <% } %>
+
+    <%# ——— The list ——— %>
+    <section class="mx-auto max-w-6xl px-6 py-12">
+      <% if (total === 0) { %>
+      <%# Empty list — nudge toward filling it. %>
+      <div class="border border-ink/15 px-6 py-16 text-center">
+        <p class="font-serif text-2xl font-extrabold tracking-tight">your shelf is empty</p>
+        <p class="mt-3 text-ink/70">Track anything from its page — set a status, rate it, mark a favorite — and it lands here. The more you track, the sharper your “for you” thread.</p>
+        <div class="mt-6 flex flex-wrap justify-center gap-3">
+          <a href="/catalog" class="meta border border-ink px-4 py-2 transition-colors hover:border-sakura hover:text-sakura">browse the catalog</a>
+          <a href="/discover" class="meta border border-ink/25 px-4 py-2 transition-colors hover:border-sakura hover:text-sakura">discover something</a>
+        </div>
+      </div>
+      <% } else { %>
+
+      <%# Status tabs — plain GET links, no JS. %>
+      <div class="flex flex-wrap gap-2">
+        <a href="/library" class="meta border px-3 py-1.5 transition-colors <%= !status ? 'border-sakura text-sakura' : 'border-ink/25 text-ink/70 hover:border-sakura hover:text-sakura' %>">all <span class="tabular-nums"><%= total %></span></a>
+        <% tabs.forEach(([s, label]) => { %>
+        <a href="/library?status=<%= s %>" class="meta border px-3 py-1.5 transition-colors <%= status === s ? 'border-sakura text-sakura' : 'border-ink/25 text-ink/70 hover:border-sakura hover:text-sakura' %>"><%= label %> <span class="tabular-nums"><%= counts[s] %></span></a>
+        <% }) %>
+      </div>
+
+      <% if (!entries.length) { %>
+      <p class="mt-10 text-ink/60">Nothing with that status yet.</p>
+      <% } else { %>
+      <div class="mt-8 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 lg:grid-cols-6">
+        <% entries.forEach((e) => { %>
+        <a href="/anime/<%= e.anime_id %>" class="group block">
+          <div class="cover-lift relative aspect-[2/3] overflow-hidden border border-ink/20">
+            <img src="<%= e.cover_large || e.cover_image_url %>" alt="" loading="lazy" decoding="async"
+              class="cover-img h-full w-full"
+              onerror="this.onerror=null;this.src='<%= e.cover_image_url %>'" />
+            <% if (e.is_favorite) { %>
+            <span class="pointer-events-none absolute right-2 top-2 font-serif text-lg text-sakura drop-shadow" aria-hidden="true">★</span>
+            <% } %>
+            <div class="absolute inset-0 flex flex-col justify-end bg-night/85 p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              <% if (e.score != null) { %>
+              <p class="font-serif text-2xl font-extrabold tracking-tight text-sakura tabular-nums"><%= (e.score / 10).toFixed(1) %></p>
+              <% } %>
+              <p class="meta mt-1 text-paper/80"><%= [e.season_year, e.format, e.episodes ? e.episodes + ' ep' : null].filter(Boolean).join(' · ') %></p>
+            </div>
+          </div>
+          <p class="mt-2 line-clamp-2 font-serif text-sm font-bold leading-snug text-ink"><%= e.title_romaji %></p>
+          <p class="meta mt-0.5 text-ink/50"><%= e.status.toLowerCase() %><%= e.score != null ? ' · ' + (e.score / 10).toFixed(1) : '' %></p>
+        </a>
+        <% }) %>
+      </div>
+      <% } %>
+      <% } %>
+    </section>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>
