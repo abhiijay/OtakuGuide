@@ -5,7 +5,7 @@
 //
 // Top-level exports:
 //   recommendFromAnime(animeId, opts) — "more like this anime"
-//   recommendForUser(userId, opts)    — personalized; needs user_anime data (v2)
+//   recommendFromUser(userId, opts)   — personalized "for you" from the taste vector [LIVE]
 //
 // Roadmap (each commit adds one signal, smoke-tested against real data):
 //   #1 synopsis embedding via sqlite-vec       [LIVE]
@@ -801,9 +801,151 @@ function recommendFromAnime(animeId, opts = {}) {
   return mergeSignals(inputs, weights, { limit, refineFor: animeId, refiners, exclude });
 }
 
+// "For you." Personalized recommendations from the user's taste vector —
+// the weighted-sum-of-watched-synopsis-vectors that src/library.js keeps in
+// user_vectors.synopsis_taste_vec, refreshed after every list change. This
+// is the consumer that vector was built for (onboarding produces it; the
+// Library page renders these).
+//
+// v1 ranks on the SYNOPSIS facet alone, because that's the only facet
+// recomputeTasteVector populates today — tag/character/review taste vectors
+// are v2 and stay NULL. When they land, blend them in here; nothing is faked
+// in the meantime.
+//
+// Returns [] when there's no usable taste direction yet (empty list, or
+// positives and negatives that cancelled to ~zero — recomputeTasteVector
+// stores NULL in that case). The caller treats [] as "do the onboarding /
+// add some shows first," not an error.
+//
+// Each rec carries:
+//   score          — cosine similarity to the taste vector, in [-1, 1]
+//   signals: 'taste'
+//   because        — { id, title, similarity } of the positively-weighted
+//                    anime on the user's list this rec is closest to, i.e.
+//                    the "because you loved X" explanation (null if the
+//                    vector is driven purely by negative signals)
+function recommendFromUser(userId, opts = {}) {
+  const {
+    limit = 20,
+    poolSize = 200,
+    excludeFranchise = true,
+  } = opts;
+
+  const tv = db
+    .prepare('SELECT synopsis_taste_vec FROM user_vectors WHERE user_id = ?')
+    .get(userId);
+  const taste = tv && tv.synopsis_taste_vec ? tv.synopsis_taste_vec : null;
+  if (!taste) return [];
+
+  // Never recommend something already on the list, in ANY status — a rec for
+  // a show they're already tracking (even one they only planned) is noise.
+  const listed = db
+    .prepare('SELECT anime_id FROM user_anime WHERE user_id = ?')
+    .all(userId)
+    .map((r) => r.anime_id);
+  const listedPh = listed.map(() => '?').join(',');
+
+  // Nearest catalog anime to the taste vector. The bound BLOB is read by
+  // sqlite-vec as a 384-d float32 vector, same as the column it's compared
+  // against. Sorted most-similar-first; we over-fetch (poolSize > limit) so
+  // the franchise filter and title-dedupe below have room to drop rows.
+  const pool = db
+    .prepare(
+      `SELECT a.id, a.title_romaji, a.title_english, a.average_score,
+              vec_distance_cosine(a.synopsis_vec, ?) AS dist
+         FROM anime a
+        WHERE a.synopsis_vec IS NOT NULL
+          AND a.is_adult = 0
+          ${listed.length ? `AND a.id NOT IN (${listedPh})` : ''}
+        ORDER BY dist ASC
+        LIMIT ?`
+    )
+    .all(taste, ...listed, poolSize);
+
+  // The anime that positively shaped the taste vector — the seeds for both
+  // the franchise filter (don't recommend a sequel of a show they love) and
+  // the "because you loved X" explanation. tasteWeight is the same scoring
+  // recomputeTasteVector used; we lazy-require it because library.js requires
+  // THIS module at load time, and a top-level back-require would hand us a
+  // half-initialized library module.
+  const { tasteWeight } = require('./library');
+  const seeds = db
+    .prepare(
+      `SELECT ua.anime_id AS id, ua.status, ua.score, ua.is_favorite,
+              ua.rewatched_count, a.title_romaji, a.title_english, a.synopsis_vec
+         FROM user_anime ua
+         JOIN anime a ON a.id = ua.anime_id
+        WHERE ua.user_id = ? AND a.synopsis_vec IS NOT NULL`
+    )
+    .all(userId)
+    .filter((s) => tasteWeight(s) > 0);
+
+  // One franchise excluder per positive seed; a candidate is dropped if it
+  // belongs to ANY of their franchises. Cost is one depth-3 relation walk
+  // per seed — trivial for an onboarding pick-5, fine for normal lists; if
+  // libraries ever grow into the thousands this is the line to revisit.
+  const excluders = excludeFranchise ? seeds.map((s) => franchiseExcluder(s.id)) : [];
+
+  // Single pass: apply the franchise filter, dedupe by display title (the
+  // catalog carries some entries twice — see mergeSignals), take `limit`.
+  const seenTitles = new Set();
+  const finalRows = [];
+  for (const row of pool) {
+    if (finalRows.length === limit) break;
+    if (excluders.some((ex) => ex(row))) continue;
+    const key = (row.title_english || row.title_romaji || '').toLowerCase();
+    if (seenTitles.has(key)) continue;
+    seenTitles.add(key);
+    finalRows.push(row);
+  }
+
+  // Explainability: anchor each rec to the positive seed it's most similar
+  // to. We need the candidates' own vectors for this (the pool query only
+  // returned distance-to-taste), so fetch them for the final slice only.
+  const seedVecs = seeds.map((s) => ({
+    id: s.id,
+    title: s.title_english || s.title_romaji,
+    vec: bufferToFloat32(s.synopsis_vec),
+  }));
+  const candVecs = new Map();
+  if (seedVecs.length && finalRows.length) {
+    const ids = finalRows.map((r) => r.id);
+    const ph = ids.map(() => '?').join(',');
+    for (const r of db
+      .prepare(`SELECT id, synopsis_vec FROM anime WHERE id IN (${ph})`)
+      .all(...ids)) {
+      candVecs.set(r.id, bufferToFloat32(r.synopsis_vec));
+    }
+  }
+
+  return finalRows.map((row) => {
+    let because = null;
+    const cv = candVecs.get(row.id);
+    if (cv) {
+      let bestSim = -Infinity;
+      for (const sv of seedVecs) {
+        const sim = cosineSimilarity(cv, sv.vec);
+        if (sim > bestSim) {
+          bestSim = sim;
+          because = { id: sv.id, title: sv.title, similarity: Number(sim.toFixed(4)) };
+        }
+      }
+    }
+    return {
+      id: row.id,
+      title: row.title_english || row.title_romaji,
+      score: Number((1 - row.dist).toFixed(4)),
+      signals: 'taste',
+      average_score: row.average_score,
+      because,
+    };
+  });
+}
+
 module.exports = {
   // public API
   recommendFromAnime,
+  recommendFromUser,
   // per-signal candidate fetchers (exposed for tests + future re-use)
   neighborsBySynopsis,
   neighborsByTags,
@@ -1012,6 +1154,37 @@ if (require.main === module) {
       'excludeFranchise:false still surfaces the franchise (filter is the only thing hiding it)');
     console.log('  filtered top 10:');
     for (const r of recs) console.log(`    ${r.score.toFixed(4)}  [${r.signals.padEnd(26)}]  ${r.title}`);
+  }
+
+  // Personalized "for you" — runs only against a real user who already has a
+  // taste vector, so the smoke test never has to mutate user data. If no such
+  // user exists yet (fresh DB, nobody's built a list), it's skipped.
+  console.log('\nPhase 3 — personalized recommendFromUser');
+  const tasteUser = db
+    .prepare(
+      `SELECT user_id FROM user_vectors
+        WHERE synopsis_taste_vec IS NOT NULL LIMIT 1`
+    )
+    .get();
+  if (!tasteUser) {
+    console.log('  no user has a taste vector yet — skipping (build a list first)');
+  } else {
+    const uid = tasteUser.user_id;
+    const listed = new Set(
+      db.prepare('SELECT anime_id FROM user_anime WHERE user_id = ?').all(uid).map((r) => r.anime_id)
+    );
+    const recs = recommendFromUser(uid, { limit: 10 });
+    console.log(`  === user ${uid} — ${recs.length} recs ===`);
+    assert(recs.length > 0, 'taste vector present ⇒ at least one rec');
+    assert(recs.every((r) => !listed.has(r.id)), 'no already-listed anime in the recs');
+    assert(recs.every((r) => r.signals === 'taste'), "every rec is provenance 'taste'");
+    assert(recs.every((r) => r.score >= -1 && r.score <= 1), 'taste similarity in [-1, 1]');
+    const titles = recs.map((r) => r.title.toLowerCase());
+    assert(new Set(titles).size === titles.length, 'no duplicate titles in the recs');
+    for (const r of recs) {
+      const why = r.because ? `  ← ${r.because.title} (${r.because.similarity})` : '';
+      console.log(`    ${r.score.toFixed(4)}  ${r.title}${why}`);
+    }
   }
 
   if (printed === 0) {
