@@ -1,0 +1,83 @@
+<%# Signup — create an OtakuGuide account. Receives from src/routes/auth.js:
+      errors (array of strings), values ({ email, username } to repopulate).
+      res.locals.csrfToken is set by the csrf middleware. No JS; a plain POST. %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head', { title: 'Sign up' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('partials/frame') %>
+  <%- include('partials/nav') %>
+
+  <main class="relative mx-auto max-w-md overflow-hidden px-6 py-16">
+    <span class="pointer-events-none absolute -right-8 -top-10 select-none font-serif text-[12rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">録</span>
+
+    <div class="reveal relative">
+      <h1>
+        <span class="relative inline-block font-serif text-4xl font-extrabold tracking-tight">
+          <span class="absolute -inset-x-4 -inset-y-1.5 -rotate-1 bg-sakura" aria-hidden="true"></span>
+          <span class="relative text-paper">登録</span>
+        </span>
+        <span class="jp-sub mt-3">touroku — make an account · pull your own red thread</span>
+      </h1>
+
+      <% if (errors && errors.length) { %>
+      <div class="mt-8 border-l-2 border-sakura bg-sakura/5 px-4 py-3" role="alert">
+        <% errors.forEach((e) => { %>
+        <p class="text-sm text-sakura-deep"><%= e %></p>
+        <% }) %>
+      </div>
+      <% } %>
+
+      <form method="post" action="/signup" class="mt-8 space-y-5">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+        <label class="block">
+          <span class="meta">email</span>
+          <input type="email" name="email" value="<%= values.email || '' %>" required autocomplete="email"
+            class="mt-1.5 w-full border border-ink/80 bg-paper px-4 py-3 text-sm text-ink placeholder:text-ink/40 focus:border-sakura focus:outline-none" />
+        </label>
+
+        <label class="block">
+          <span class="meta">username</span>
+          <input type="text" name="username" value="<%= values.username || '' %>" required minlength="3" maxlength="20" autocomplete="username"
+            class="mt-1.5 w-full border border-ink/80 bg-paper px-4 py-3 text-sm text-ink placeholder:text-ink/40 focus:border-sakura focus:outline-none" />
+          <span class="meta mt-1 block normal-case tracking-normal text-ink/45">3–20 characters · letters, numbers, _ or -</span>
+        </label>
+
+        <label class="block">
+          <span class="meta">password</span>
+          <input type="password" name="password" required minlength="8" autocomplete="new-password"
+            class="mt-1.5 w-full border border-ink/80 bg-paper px-4 py-3 text-sm text-ink placeholder:text-ink/40 focus:border-sakura focus:outline-none" />
+          <span class="meta mt-1 block normal-case tracking-normal text-ink/45">at least 8 characters</span>
+        </label>
+
+        <button type="submit" class="w-full bg-ink px-6 py-3 font-mono text-xs uppercase tracking-[0.2em] text-paper transition-colors hover:bg-sakura">
+          create account
+        </button>
+      </form>
+
+      <%# AniList sign-in is an equal login option by design, but the OAuth flow
+          isn't built yet — show it honestly disabled (no fake feature), the
+          same convention as the unbuilt nav tabs. It becomes a real button the
+          commit the callback ships. %>
+      <div class="mt-6 flex items-center gap-3" aria-hidden="true">
+        <span class="h-px flex-1 bg-ink/15"></span>
+        <span class="meta text-ink/40">or</span>
+        <span class="h-px flex-1 bg-ink/15"></span>
+      </div>
+      <span class="mt-6 flex w-full cursor-not-allowed items-center justify-center border border-dashed border-ink/30 px-6 py-3 font-mono text-xs uppercase tracking-[0.2em] text-ink/35" title="Coming soon">
+        AniList sign-in — soon
+      </span>
+
+      <p class="meta mt-8 normal-case tracking-normal text-ink/55">
+        Already have an account?
+        <a href="/login" class="underline decoration-sakura underline-offset-2 hover:text-sakura">Log in</a>.
+      </p>
+    </div>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>

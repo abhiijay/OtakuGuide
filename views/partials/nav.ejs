@@ -27,9 +27,20 @@
       <a href="/airing" <%- act === 'airing' ? 'aria-current="page"' : '' %> class="nav-tab">Airing</a>
       <a href="/discover" <%- act === 'discover' ? 'aria-current="page"' : '' %> class="nav-tab">Discover</a>
       <span class="nav-tab nav-tab-soon hidden sm:inline" title="Coming soon">Library</span>
-      <span class="hidden items-baseline gap-2 border-l border-ink/30 pl-6 md:flex">
-        <span class="font-serif text-lg font-extrabold leading-none">No.001</span>
-        <span class="meta">2026.06</span>
+      <%# Account state. res.locals.user is set by attachUser on every request;
+          csrfToken by the csrf middleware. Logged out → a log-in link; logged
+          in → the username + a POST-only logout (a link could be prefetched).
+          The full sakura account-corner UI lands with AniList OAuth. %>
+      <span class="flex items-center gap-4 border-l border-ink/30 pl-6">
+        <% if (typeof user !== 'undefined' && user) { %>
+        <span class="meta hidden text-ink/55 sm:inline" title="Signed in"><%= user.username %></span>
+        <form method="post" action="/logout" class="inline">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <button type="submit" class="nav-tab">Log out</button>
+        </form>
+        <% } else { %>
+        <a href="/login" <%- act === 'login' ? 'aria-current="page"' : '' %> class="nav-tab">Log in</a>
+        <% } %>
       </span>
     </div>
   </nav>
