@@ -26,7 +26,7 @@ PRAGMA foreign_keys = ON;
 -- as "OAuth-only" and disables the password form for that email.
 CREATE TABLE IF NOT EXISTS users (
   id                       INTEGER PRIMARY KEY,
-  email                    TEXT    NOT NULL UNIQUE,    -- login identity; app code lowercases before insert/lookup
+  email                    TEXT    UNIQUE,             -- login identity; app lowercases before insert/lookup. NULL for AniList-only accounts (their API exposes no email); SQLite counts NULLs as distinct, so UNIQUE still holds
   password_hash            TEXT,                       -- bcrypt; NULL for OAuth-only accounts
   username                 TEXT    NOT NULL UNIQUE,    -- display name shown in header, settings, future profile pages
   created_at               TEXT    NOT NULL,           -- ISO-8601 UTC; set once at signup

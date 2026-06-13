@@ -58,18 +58,18 @@
         </button>
       </form>
 
-      <%# AniList sign-in is an equal login option by design, but the OAuth flow
-          isn't built yet — show it honestly disabled (no fake feature), the
-          same convention as the unbuilt nav tabs. It becomes a real button the
-          commit the callback ships. %>
-      <div class="mt-6 flex items-center gap-3" aria-hidden="true">
+      <%# AniList sign-in is an EQUAL login option by design (project rule — never
+          louder than email, or we've effectively gated the app on AniList).
+          First-time AniList sign-in auto-creates an account, so it belongs on the
+          signup page too. Outlined to read as a peer of the filled ink button. %>
+      <div class="mt-6 flex items-center gap-3">
         <span class="h-px flex-1 bg-ink/15"></span>
         <span class="meta text-ink/40">or</span>
         <span class="h-px flex-1 bg-ink/15"></span>
       </div>
-      <span class="mt-6 flex w-full cursor-not-allowed items-center justify-center border border-dashed border-ink/30 px-6 py-3 font-mono text-xs uppercase tracking-[0.2em] text-ink/35" title="Coming soon">
-        AniList sign-in — soon
-      </span>
+      <a href="/auth/anilist" class="mt-6 flex w-full items-center justify-center border-2 border-ink px-6 py-3 font-mono text-xs uppercase tracking-[0.2em] text-ink transition-colors hover:border-sakura hover:text-sakura">
+        continue with AniList
+      </a>
 
       <p class="meta mt-8 normal-case tracking-normal text-ink/55">
         Already have an account?

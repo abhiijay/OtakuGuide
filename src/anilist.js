@@ -359,12 +359,77 @@ async function fetchSeasonPage(season, year, page) {
   };
 }
 
+// ---------- OAuth (user login, NOT catalog crawl) ----------
+// These two are different animals from everything above: they're triggered by
+// a human clicking "sign in with AniList", run once per login, and carry the
+// USER's own token — not our catalog crawl traffic. So they DON'T go through
+// fetchWithRetry/waitForSlot (the 2200ms catalog limiter): there's no crawl to
+// pace, and making a login wait up to 2.2s behind import traffic would be
+// silly. A login that fails just shows an error and the user clicks again.
+//
+// AniList OAuth is standard OAuth2 Authorization Code Grant:
+//   authorize → user approves → AniList redirects back with ?code & ?state →
+//   we POST the code here for a token → we fetch the viewer with that token.
+// Docs: https://docs.anilist.co/guide/auth/authorization-code
+
+const OAUTH_TOKEN_ENDPOINT = 'https://anilist.co/api/v2/oauth/token';
+
+// Exchange a one-time authorization code for an access token.
+// Returns AniList's token response: { access_token, token_type, expires_in, ... }.
+// access_token is a JWT valid ~1 year; expires_in is seconds-from-now.
+// Throws on any non-2xx so the callback route can show "couldn't link AniList".
+async function exchangeCode(code) {
+  const res = await fetch(OAUTH_TOKEN_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'authorization_code',
+      client_id: process.env.ANILIST_CLIENT_ID,
+      client_secret: process.env.ANILIST_CLIENT_SECRET,
+      redirect_uri: process.env.ANILIST_REDIRECT_URI,
+      code,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`AniList token exchange ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+// Fetch the authenticated user's AniList identity with their access token.
+// Returns { id, name } — AniList exposes NO email on the User type, so id+name
+// is everything we get. id is what we store as external_accounts.provider_user_id
+// (the stable key that recognizes a returning user); name seeds the username.
+async function fetchViewer(accessToken) {
+  const res = await fetch(ANILIST_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ query: 'query { Viewer { id name } }' }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`AniList viewer fetch ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  if (data.errors) {
+    throw new Error(`AniList GraphQL: ${JSON.stringify(data.errors)}`);
+  }
+  return data.data.Viewer; // { id, name }
+}
+
 module.exports = {
   fetchHighestAnimeId,
   fetchAnimeBatchByIds,
   fetchCountryBatchByIds,
   fetchPopularityBatchByIds,
   fetchSeasonPage,
+  exchangeCode,
+  fetchViewer,
   ID_BATCH_SIZE,
 };
 

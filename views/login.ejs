@@ -50,16 +50,19 @@
         </button>
       </form>
 
-      <%# AniList sign-in: equal option by design, OAuth flow not built yet —
-          shown honestly disabled (no fake feature), like the unbuilt nav tabs. %>
-      <div class="mt-6 flex items-center gap-3" aria-hidden="true">
+      <%# AniList sign-in: an EQUAL option by design (project rule — the AniList
+          button must never be louder than email, or we've gated the app). Same
+          size/height as the ink button above; outlined rather than filled so the
+          two read as peers, not primary+secondary. GET is correct here: it just
+          starts the OAuth redirect; the state change happens server-side. %>
+      <div class="mt-6 flex items-center gap-3">
         <span class="h-px flex-1 bg-ink/15"></span>
         <span class="meta text-ink/40">or</span>
         <span class="h-px flex-1 bg-ink/15"></span>
       </div>
-      <span class="mt-6 flex w-full cursor-not-allowed items-center justify-center border border-dashed border-ink/30 px-6 py-3 font-mono text-xs uppercase tracking-[0.2em] text-ink/35" title="Coming soon">
-        AniList sign-in — soon
-      </span>
+      <a href="/auth/anilist" class="mt-6 flex w-full items-center justify-center border-2 border-ink px-6 py-3 font-mono text-xs uppercase tracking-[0.2em] text-ink transition-colors hover:border-sakura hover:text-sakura">
+        continue with AniList
+      </a>
 
       <p class="meta mt-8 normal-case tracking-normal text-ink/55">
         New here?

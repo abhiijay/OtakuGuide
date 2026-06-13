@@ -138,6 +138,114 @@ function verifyLogin(email, password) {
 }
 
 // ----------------------------------------------------------------------------
+// AniList OAuth account linking
+// ----------------------------------------------------------------------------
+// The OAuth callback hands us the viewer's AniList { id, name } plus a token.
+// Three cases collapse into one helper:
+//   1. Returning AniList user — external_accounts already has this anilistId →
+//      refresh the stored token, return the owning user, log them in.
+//   2. A logged-in user is linking — sessionUserId is set → attach this AniList
+//      account to THAT user (this is our "link if it's really the same person"
+//      path; we key on the live session, since AniList gives us no email to
+//      match on). Refuses if the AniList account is already linked elsewhere.
+//   3. First-time AniList sign-in, no session — auto-create a fresh OAuth-only
+//      user (email = NULL, password_hash = NULL), username seeded from the
+//      AniList name (suffixed on collision).
+//
+// Returns the user row to log in. Throws { message } for the one user-facing
+// failure (case 2 conflict) so the route can render it.
+
+// AniList usernames don't have to satisfy our USERNAME_RE (3-20, url-safe),
+// so sanitize: strip disallowed chars, clamp length, fall back to a generic
+// stem, then append -2, -3, … until the UNIQUE(username) constraint is happy.
+function uniqueUsernameFrom(rawName) {
+  let base = String(rawName || '')
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .slice(0, 20);
+  if (base.length < 3) base = 'otaku';
+  let candidate = base;
+  let n = 1;
+  while (db.prepare(`SELECT 1 FROM users WHERE username = ?`).get(candidate)) {
+    n += 1;
+    const suffix = `-${n}`;
+    candidate = base.slice(0, 20 - suffix.length) + suffix;
+  }
+  return candidate;
+}
+
+// Write (or refresh) the external_accounts row for an AniList link. Keyed on
+// UNIQUE(user_id, provider), so re-linking the same provider updates the token
+// in place rather than duplicating. expiresIn is AniList's seconds-from-now.
+function upsertExternalAccount({ userId, anilistId, accessToken, expiresIn }) {
+  const now = new Date().toISOString();
+  const expiresAt = expiresIn
+    ? new Date(Date.now() + expiresIn * 1000).toISOString()
+    : null;
+  db.prepare(
+    `INSERT INTO external_accounts
+       (user_id, provider, provider_user_id, access_token, expires_at, connected_at)
+     VALUES (?, 'anilist', ?, ?, ?, ?)
+     ON CONFLICT(user_id, provider) DO UPDATE SET
+       provider_user_id = excluded.provider_user_id,
+       access_token     = excluded.access_token,
+       expires_at       = excluded.expires_at`
+  ).run(userId, String(anilistId), accessToken, expiresAt, now);
+}
+
+function findUserByAnilistId(anilistId) {
+  const row = db
+    .prepare(
+      `SELECT user_id FROM external_accounts
+       WHERE provider = 'anilist' AND provider_user_id = ?`
+    )
+    .get(String(anilistId));
+  return row ? findById(row.user_id) : null;
+}
+
+function findOrCreateAnilistUser({ anilistId, name, accessToken, expiresIn, sessionUserId }) {
+  // Case 1 — this AniList account is already linked to some OtakuGuide user.
+  const existing = findUserByAnilistId(anilistId);
+  if (existing) {
+    // Guard: a logged-in user must not "link" an AniList account owned by a
+    // DIFFERENT user — that would hijack the session into the other account.
+    // Only block when it's genuinely someone else's; re-linking your own is fine.
+    if (sessionUserId && existing.id !== sessionUserId) {
+      throw {
+        message:
+          'That AniList account is already connected to a different OtakuGuide account.',
+      };
+    }
+    // Returning user (or re-linking your own): refresh the token, log them in.
+    upsertExternalAccount({ userId: existing.id, anilistId, accessToken, expiresIn });
+    return existing;
+  }
+
+  // Case 2 — a logged-in user is linking a brand-new AniList account to theirs.
+  if (sessionUserId) {
+    const me = findById(sessionUserId);
+    if (me) {
+      upsertExternalAccount({ userId: me.id, anilistId, accessToken, expiresIn });
+      return me;
+    }
+    // sessionUserId pointed at a deleted/disabled user — fall through to create.
+  }
+
+  // Case 3 — first-time sign-in, no session. Auto-create an OAuth-only user:
+  // email NULL (AniList has none), password_hash NULL (no local login).
+  const now = new Date().toISOString();
+  const username = uniqueUsernameFrom(name);
+  const info = db
+    .prepare(
+      `INSERT INTO users (email, password_hash, username, created_at)
+       VALUES (NULL, NULL, ?, ?)`
+    )
+    .run(username, now);
+  const user = findById(info.lastInsertRowid);
+  upsertExternalAccount({ userId: user.id, anilistId, accessToken, expiresIn });
+  return user;
+}
+
+// ----------------------------------------------------------------------------
 // Express middleware
 // ----------------------------------------------------------------------------
 
@@ -207,6 +315,7 @@ module.exports = {
   findById,
   touchLastSeen,
   verifyLogin,
+  findOrCreateAnilistUser,
   attachUser,
   requireAuth,
   csrf,
