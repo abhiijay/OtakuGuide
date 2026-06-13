@@ -26,23 +26,35 @@
       <a href="/catalog" <%- act === 'catalog' ? 'aria-current="page"' : '' %> class="nav-tab">Catalog</a>
       <a href="/airing" <%- act === 'airing' ? 'aria-current="page"' : '' %> class="nav-tab">Airing</a>
       <a href="/discover" <%- act === 'discover' ? 'aria-current="page"' : '' %> class="nav-tab">Discover</a>
-      <span class="nav-tab nav-tab-soon hidden sm:inline" title="Coming soon">Library</span>
-      <%# Account state. res.locals.user is set by attachUser on every request;
-          csrfToken by the csrf middleware. Logged out → a log-in link; logged
-          in → the avatar + username linking to /profile, plus a POST-only logout
-          (a link could be prefetched). The /profile link is the conventional
-          path to the account; the sakura account-corner UI is the delightful
-          shortcut that lands on top of it. %>
+      <a href="/library" <%- act === 'library' ? 'aria-current="page"' : '' %> class="nav-tab hidden sm:inline">Library</a>
+      <%# Account state. res.locals.user is set by attachUser on every request.
+          Logged in → just the avatar (NO username on the masthead), which opens
+          a dropdown to Profile / Notifications / Settings. It's a native
+          <details> menu (works with no JS); account-menu.js only adds
+          outside-click / Escape close. Logout lives inside Settings, nowhere
+          else. Logged out → a log-in link. %>
       <span class="flex items-center gap-4 border-l border-ink/30 pl-6">
         <% if (typeof user !== 'undefined' && user) { %>
-        <a href="/profile" <%- act === 'profile' ? 'aria-current="page"' : '' %> class="nav-tab flex items-center gap-2" title="Your profile">
-          <%- include('avatar', { person: user, cls: 'h-7 w-7' }) %>
-          <span class="hidden sm:inline"><%= user.username %></span>
-        </a>
-        <form method="post" action="/logout" class="inline">
-          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-          <button type="submit" class="nav-tab">Log out</button>
-        </form>
+        <details class="account-menu relative">
+          <summary aria-haspopup="menu" aria-label="Account menu" title="Account">
+            <%- include('avatar', { person: user, cls: 'h-8 w-8' }) %>
+          </summary>
+          <div role="menu" class="absolute right-0 top-full z-50 mt-3 w-52 border border-paper/15 bg-night py-2 text-paper shadow-[0_16px_40px_-12px_rgba(0,0,0,0.7)]">
+            <a href="/profile" role="menuitem" class="menu-item">
+              <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 19a7.5 7.5 0 0 1 15 0"/></svg>
+              Profile
+            </a>
+            <span role="menuitem" aria-disabled="true" class="menu-item-soon" title="Coming soon">
+              <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-2.5 8-2.5 8h17S18 15 18 8"/><path d="M10.5 20.5a2 2 0 0 0 3 0"/></svg>
+              Notifications
+              <span class="meta ml-auto text-paper/30">soon</span>
+            </span>
+            <a href="/settings" role="menuitem" class="menu-item">
+              <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1M18.7 18.7l-2.1-2.1M7.4 7.4 5.3 5.3"/></svg>
+              Settings
+            </a>
+          </div>
+        </details>
         <% } else { %>
         <a href="/login" <%- act === 'login' ? 'aria-current="page"' : '' %> class="nav-tab">Log in</a>
         <% } %>
@@ -50,3 +62,7 @@
     </div>
   </nav>
 </header>
+<%# Progressive enhancement for the account dropdown: close on outside click /
+    Escape. The menu already opens/closes via the native <details>; this only
+    makes it feel finished. No-ops when there's no menu (logged out). %>
+<script src="/js/account-menu.js" defer></script>

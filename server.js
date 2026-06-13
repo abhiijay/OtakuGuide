@@ -82,10 +82,10 @@ app.use(
 //   session → attachUser (reads session) → avatarUpload (needs req.user to name
 //   the file, and parses the multipart body so the _csrf field exists) → csrf
 //   (reads req.body for _csrf) → routes.
-// avatarUpload is scoped to /profile and is a no-op for GETs and non-multipart
+// avatarUpload is scoped to /settings and is a no-op for GETs and non-multipart
 // requests, so mounting it before csrf only affects the profile photo upload.
 app.use(attachUser);
-app.use('/profile', avatarUpload);
+app.use('/settings', avatarUpload);
 app.use(csrf);
 
 // Cold-start gate: a logged-in user who hasn't finished (or skipped) the

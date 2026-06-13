@@ -1,0 +1,169 @@
+<%# Settings — account management (separate from the public-facing /profile).
+      Receives from src/routes/pages.js:
+        user        — the logged-in row (res.locals)
+        anilist     — external_accounts row for AniList, or undefined
+        placeholders— [{ key, src }] the built-in avatar gallery
+        errors/saved— session-flash state from a previous save
+    The About section shows account details read-only; each editable thing sits
+    behind its own "Change" disclosure (<details>) so nothing is permanently an
+    open input — you edit on demand, one thing at a time. Logout lives ONLY
+    here. No hyphens in visible copy (house rule). %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head', { title: 'Settings' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('partials/frame') %>
+  <%- include('partials/nav') %>
+
+  <%
+    var memberSince = '';
+    try {
+      memberSince = new Date(user.created_at).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'long', day: 'numeric',
+      });
+    } catch (e) { memberSince = ''; }
+  %>
+
+  <main class="relative overflow-hidden">
+    <span class="pointer-events-none absolute -right-8 -top-12 select-none font-serif text-[13rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">設</span>
+    <div class="relative mx-auto max-w-2xl px-6 py-16">
+      <div class="reveal">
+        <h1>
+          <span class="relative inline-block font-serif text-4xl font-extrabold tracking-tight">
+            <span class="absolute -inset-x-4 -inset-y-1.5 -rotate-1 bg-sakura" aria-hidden="true"></span>
+            <span class="relative text-paper">設定</span>
+          </span>
+          <span class="jp-sub mt-3">settei — your account</span>
+        </h1>
+
+        <% if (saved) { %>
+        <div class="mt-8 border-l-2 border-sakura bg-sakura/5 px-4 py-3" role="status">
+          <p class="text-sm text-sakura-deep">Saved.</p>
+        </div>
+        <% } %>
+        <% if (errors && errors.length) { %>
+        <div class="mt-8 border-l-2 border-sakura bg-sakura/5 px-4 py-3" role="alert">
+          <% errors.forEach(function (e) { %><p class="text-sm text-sakura-deep"><%= e %></p><% }) %>
+        </div>
+        <% } %>
+
+        <%# ——— About ——— %>
+        <p class="meta mt-12">about — 紹介</p>
+        <div class="mt-3 divide-y divide-ink/15 border-y border-ink/80">
+
+          <%# Picture — the whole row is a disclosure; clicking it opens the picker %>
+          <details class="account-edit py-6">
+            <summary class="flex cursor-pointer list-none items-center gap-5">
+              <%- include('partials/avatar', { person: user, cls: 'h-20 w-20' }) %>
+              <span class="min-w-0 flex-1">
+                <span class="meta block text-ink/55">profile picture</span>
+                <span class="mt-1 block font-serif text-base font-bold">Your look on OtakuGuide</span>
+              </span>
+              <span class="nav-tab edit-open">Change</span>
+              <span class="nav-tab edit-close text-sakura">Close</span>
+            </summary>
+            <form method="post" action="/settings" enctype="multipart/form-data" class="mt-6 space-y-6">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="form" value="avatar" />
+              <fieldset>
+                <legend class="meta">choose a look</legend>
+                <div class="mt-3 flex flex-wrap gap-4">
+                  <% placeholders.forEach(function (p) { %>
+                  <label class="cursor-pointer">
+                    <input type="radio" name="placeholder" value="<%= p.key %>" class="peer sr-only" <%= user.avatar === p.key ? 'checked' : '' %> />
+                    <span class="block rounded-sm border-2 border-transparent p-1 transition-colors peer-checked:border-sakura peer-focus-visible:border-sakura hover:border-ink/30">
+                      <span class="enso-mask block h-16 w-16 overflow-hidden bg-paper">
+                        <img src="<%= p.src %>" alt="" class="h-full w-full object-cover" />
+                      </span>
+                    </span>
+                  </label>
+                  <% }) %>
+                </div>
+              </fieldset>
+              <label class="block">
+                <span class="meta">or upload your own</span>
+                <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp"
+                  class="mt-1.5 block w-full text-sm text-ink/70 file:mr-4 file:border file:border-ink/80 file:bg-paper file:px-4 file:py-2 file:font-mono file:text-xs file:uppercase file:tracking-[0.18em] file:text-ink hover:file:border-sakura hover:file:text-sakura" />
+                <span class="meta mt-1 block normal-case tracking-normal text-ink/45">JPG, PNG or WebP · up to 2 MB</span>
+              </label>
+              <button type="submit" class="bg-ink px-6 py-3 font-mono text-xs uppercase tracking-[0.2em] text-paper transition-colors hover:bg-sakura">save picture</button>
+            </form>
+          </details>
+
+          <%# Username %>
+          <details class="account-edit py-6">
+            <summary class="flex cursor-pointer list-none items-center gap-4">
+              <span class="min-w-0 flex-1">
+                <span class="meta block text-ink/55">username</span>
+                <span class="mt-1 block truncate font-serif text-lg font-bold"><%= user.username %></span>
+              </span>
+              <span class="nav-tab edit-open">Change</span>
+              <span class="nav-tab edit-close text-sakura">Close</span>
+            </summary>
+            <form method="post" action="/settings" class="mt-5 space-y-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="form" value="username" />
+              <input type="text" name="username" value="<%= user.username %>" required minlength="3" maxlength="20" autocomplete="username"
+                class="w-full border border-ink/80 bg-paper px-4 py-3 text-sm text-ink focus:border-sakura focus:outline-none" />
+              <span class="meta block normal-case tracking-normal text-ink/45">3–20 characters · letters, numbers, _ or -</span>
+              <button type="submit" class="bg-ink px-6 py-3 font-mono text-xs uppercase tracking-[0.2em] text-paper transition-colors hover:bg-sakura">save username</button>
+            </form>
+          </details>
+
+          <%# Email (read only) %>
+          <div class="flex items-center gap-4 py-6">
+            <div class="min-w-0 flex-1">
+              <p class="meta text-ink/55">email</p>
+              <p class="mt-1 truncate font-serif text-base font-bold"><%= user.email || 'Not set (AniList sign in)' %></p>
+            </div>
+          </div>
+
+          <%# Member since (read only) %>
+          <% if (memberSince) { %>
+          <div class="flex items-center gap-4 py-6">
+            <div class="min-w-0 flex-1">
+              <p class="meta text-ink/55">member since</p>
+              <p class="mt-1 font-serif text-base font-bold"><%= memberSince %></p>
+            </div>
+          </div>
+          <% } %>
+
+          <%# AniList link %>
+          <div class="flex items-center gap-4 py-6">
+            <div class="min-w-0 flex-1">
+              <p class="meta text-ink/55">AniList</p>
+              <% if (anilist) { %>
+              <p class="mt-1 inline-flex items-center gap-2 font-serif text-base font-bold text-sakura"><span class="inline-block h-2 w-2 bg-sakura" aria-hidden="true"></span>Connected</p>
+              <% } else { %>
+              <p class="mt-1 font-serif text-base font-bold text-ink/55">Not connected</p>
+              <% } %>
+            </div>
+            <% if (!anilist) { %>
+            <a href="/auth/anilist" class="nav-tab">Connect</a>
+            <% } %>
+          </div>
+        </div>
+
+        <%# ——— Account ——— %>
+        <p class="meta mt-12">account — アカウント</p>
+        <div class="mt-3 flex items-center justify-between gap-4 border-y border-ink/80 py-6">
+          <div>
+            <p class="font-serif text-base font-bold">Sign out</p>
+            <p class="meta mt-1 normal-case tracking-normal text-ink/55">End this session on this device.</p>
+          </div>
+          <form method="post" action="/logout">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <button type="submit" class="border border-ink px-6 py-3 font-mono text-xs uppercase tracking-[0.2em] text-ink transition-colors hover:border-sakura hover:bg-sakura hover:text-paper">Log out</button>
+          </form>
+        </div>
+
+        <p class="meta mt-10"><a href="/profile" class="text-ink/55 underline decoration-sakura underline-offset-2 transition-colors hover:text-sakura">← back to your profile</a></p>
+      </div>
+    </div>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>

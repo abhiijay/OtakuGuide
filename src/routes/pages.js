@@ -713,21 +713,31 @@ router.get('/how-it-works/:slug', (req, res) => {
 // which validates, mutates, and redirects back here (post-redirect-get); it
 // hands any error / success / repopulated values back via one-shot session
 // flash keys that we read and clear here.
+// Profile — the account's public-facing showcase: identity + library stats.
+// Display only; editing lives on /settings. requireAuth bounces signed-out
+// visitors to /login.
 router.get('/profile', requireAuth, (req, res) => {
-  const flashErrors = req.session.profileErrors || [];
-  const flashValues = req.session.profileValues || {};
-  const saved = Boolean(req.session.profileSaved);
-  delete req.session.profileErrors;
-  delete req.session.profileValues;
-  delete req.session.profileSaved;
-
   res.render('profile', {
     active: 'profile',
     anilist: findExternalAccount(req.user.id, 'anilist'),
-    placeholders: PLACEHOLDER_KEYS.map((key) => ({ key, src: placeholderPath(key) })),
     summary: profileSummary(req.user.id),
-    errors: flashErrors,
-    values: flashValues,
+  });
+});
+
+// Settings — account management (edit name/avatar, AniList, logout). The edit
+// form POSTs to /settings in auth.js, which redirects back here with one-shot
+// session-flash state we read and clear.
+router.get('/settings', requireAuth, (req, res) => {
+  const errors = req.session.settingsErrors || [];
+  const saved = Boolean(req.session.settingsSaved);
+  delete req.session.settingsErrors;
+  delete req.session.settingsSaved;
+
+  res.render('settings', {
+    active: '',
+    anilist: findExternalAccount(req.user.id, 'anilist'),
+    placeholders: PLACEHOLDER_KEYS.map((key) => ({ key, src: placeholderPath(key) })),
+    errors,
     saved,
   });
 });

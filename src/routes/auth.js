@@ -206,55 +206,59 @@ router.get('/auth/anilist/callback', async (req, res, next) => {
   }
 });
 
-// ---- Profile edit ----------------------------------------------------------
-// The /profile PAGE renders in pages.js (HTML surface); this is the matching
-// state change (same split as logout living here, not pages.js). The form is
-// multipart — server.js runs the avatar upload parser on /profile BEFORE csrf
-// so req.body._csrf and req.file are both available here. The edit is atomic:
-// any validation error saves nothing, discards a just-uploaded file, and
-// redirects back to /profile with the error (post-redirect-get via session
-// flash keys that pages.js reads and clears).
-router.post('/profile', auth.requireAuth, (req, res, next) => {
-  const username = (req.body.username || '').trim();
-  const chosenPlaceholder = req.body.placeholder || ''; // '' = no change
-  const errors = [];
-
-  if (req.uploadError) errors.push(req.uploadError); // set by the multer wrapper
-  const nameErr = auth.validateUsername(username);
-  if (nameErr) errors.push(nameErr);
-
-  // Bail with the form's state preserved. The upload is held in memory and only
-  // written on success, so a failed submit leaves nothing on disk to clean up.
+// ---- Settings (account edits) ---------------------------------------------
+// The /settings PAGE renders in pages.js; this is the matching state change
+// (same split as logout living here). The About section has separate "Change"
+// disclosures, so an edit is partial: a hidden `form` field says which one was
+// submitted. The avatar form is multipart — server.js runs the upload parser on
+// /settings BEFORE csrf so req.body._csrf and req.file are both available here.
+// Errors / success come back via one-shot session flash that the GET clears.
+router.post('/settings', auth.requireAuth, (req, res, next) => {
+  const which = req.body.form;
   const fail = (msgs) => {
-    req.session.profileErrors = msgs;
-    req.session.profileValues = { username };
-    res.redirect('/profile');
+    req.session.settingsErrors = msgs;
+    res.redirect('/settings');
+  };
+  const done = () => {
+    req.session.settingsSaved = true;
+    res.redirect('/settings');
   };
 
-  if (errors.length) return fail(errors);
-
-  try {
-    if (username !== req.user.username) auth.updateUsername(req.user.id, username);
-  } catch (err) {
-    if (err && err.field) return fail([err.message]); // username taken
-    return next(err);
+  // Username change.
+  if (which === 'username') {
+    const username = (req.body.username || '').trim();
+    const nameErr = auth.validateUsername(username);
+    if (nameErr) return fail([nameErr]);
+    try {
+      if (username !== req.user.username) auth.updateUsername(req.user.id, username);
+    } catch (err) {
+      if (err && err.field) return fail([err.message]); // username taken
+      return next(err);
+    }
+    return done();
   }
 
-  // Avatar precedence: an uploaded photo wins; else a chosen placeholder; else
-  // leave it untouched. Replacing an old upload deletes the old file.
-  let nextAvatar = null;
-  if (req.file) nextAvatar = saveAvatarFile(req.user.id, req.file);
-  else if (chosenPlaceholder && isValidPlaceholder(chosenPlaceholder)) {
-    nextAvatar = chosenPlaceholder;
-  }
-  if (nextAvatar && nextAvatar !== req.user.avatar) {
-    const prev = req.user.avatar;
-    auth.updateAvatar(req.user.id, nextAvatar);
-    if (prev && prev.startsWith('/uploads/')) removeUpload(prev);
+  // Avatar change — an uploaded photo wins; else a chosen placeholder; else no
+  // change. The upload is held in memory and only written on success, so a
+  // failed submit leaves nothing on disk to clean up. Replacing an old upload
+  // deletes the old file.
+  if (which === 'avatar') {
+    if (req.uploadError) return fail([req.uploadError]);
+    let nextAvatar = null;
+    if (req.file) nextAvatar = saveAvatarFile(req.user.id, req.file);
+    else if (req.body.placeholder && isValidPlaceholder(req.body.placeholder)) {
+      nextAvatar = req.body.placeholder;
+    }
+    if (nextAvatar && nextAvatar !== req.user.avatar) {
+      const prev = req.user.avatar;
+      auth.updateAvatar(req.user.id, nextAvatar);
+      if (prev && prev.startsWith('/uploads/')) removeUpload(prev);
+    }
+    return done();
   }
 
-  req.session.profileSaved = true;
-  res.redirect('/profile');
+  // Unknown / empty submit — nothing to do.
+  res.redirect('/settings');
 });
 
 module.exports = router;

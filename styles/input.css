@@ -99,6 +99,54 @@
     @apply scale-x-0;
   }
 
+  /* Account dropdown — a native <details> disclosure (works with no JS;
+     account-menu.js only adds outside-click / Escape close). The avatar is
+     the <summary>; strip its default marker so it reads as a plain button. */
+  .account-menu > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .account-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+  .account-menu > summary {
+    @apply rounded-full outline-none ring-2 ring-transparent transition-shadow;
+  }
+  .account-menu[open] > summary,
+  .account-menu > summary:focus-visible {
+    @apply ring-sakura;
+  }
+  /* One menu row — dark panel item, sakura on hover/focus. */
+  .menu-item {
+    @apply flex items-center gap-3 px-4 py-2.5 font-sans text-sm text-paper/80 transition-colors;
+  }
+  .menu-item:hover,
+  .menu-item:focus-visible {
+    @apply bg-paper/10 text-sakura outline-none;
+  }
+  .menu-item-soon {
+    @apply flex cursor-default items-center gap-3 px-4 py-2.5 font-sans text-sm text-paper/30;
+  }
+
+  /* Edit-on-demand row (settings About). A native <details>: the read-only row
+     is the summary; opening reveals the form. The "Change"/"Close" labels swap
+     on open so the affordance is honest in both states. No JS. */
+  .account-edit > summary {
+    list-style: none;
+  }
+  .account-edit > summary::-webkit-details-marker {
+    display: none;
+  }
+  .account-edit .edit-close {
+    display: none;
+  }
+  .account-edit[open] .edit-open {
+    display: none;
+  }
+  .account-edit[open] .edit-close {
+    display: inline-block;
+  }
+
   /* Anime cover art — always full color. In the dark act, a whisper of
      extra saturation/contrast makes the art glow against the night. */
   .cover-img {
