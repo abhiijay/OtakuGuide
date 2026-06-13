@@ -14,6 +14,7 @@ const SqliteStore = require('better-sqlite3-session-store')(session);
 
 const pages = require('./src/routes/pages');
 const authRoutes = require('./src/routes/auth');
+const apiRoutes = require('./src/routes/api');
 const { attachUser, csrf } = require('./src/auth');
 
 // Fail loud on missing config (hard rule). A forge-able default secret is
@@ -38,9 +39,10 @@ app.set('views', path.join(__dirname, 'views'));
 // e.g. public/css/styles.css → http://localhost:3000/css/styles.css
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Parse HTML form posts (login/signup). No JSON body parser yet — the JSON API
-// adds express.json() when src/routes/api.js ships.
+// Parse HTML form posts (login/signup) and JSON request bodies (the /api list
+// routes). Both run before csrf, which reads req.body for the _csrf field.
 app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 
 // Sessions persist in their OWN sqlite file (db/sessions.sqlite), separate
 // from the catalog DB — session churn never touches otakuguide.sqlite, and the
@@ -75,6 +77,7 @@ app.use(csrf);
 app.use(attachUser);
 
 app.use('/', authRoutes);
+app.use('/', apiRoutes);
 app.use('/', pages);
 
 const PORT = process.env.PORT || 3000;
