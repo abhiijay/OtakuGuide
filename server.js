@@ -15,7 +15,9 @@ const SqliteStore = require('better-sqlite3-session-store')(session);
 const pages = require('./src/routes/pages');
 const authRoutes = require('./src/routes/auth');
 const apiRoutes = require('./src/routes/api');
-const { attachUser, csrf } = require('./src/auth');
+const { attachUser, csrf, requireOnboarding } = require('./src/auth');
+const { avatarUpload } = require('./src/uploads');
+const { resolveAvatar } = require('./src/avatar');
 
 // Fail loud on missing config (hard rule). A forge-able default secret is
 // exactly the vulnerability the old project shipped — crash instead.
@@ -34,6 +36,11 @@ const isProd = process.env.NODE_ENV === 'production';
 // EJS as the view engine — server-rendered HTML.
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+
+// avatarSrc(user) -> image URL for that user's avatar. On app.locals so every
+// template (nav, profile, the future sakura corner) can render an avatar
+// without each route having to compute it. See src/avatar.js.
+app.locals.avatarSrc = resolveAvatar;
 
 // Serve everything under /public at the URL root.
 // e.g. public/css/styles.css → http://localhost:3000/css/styles.css
@@ -70,11 +77,22 @@ app.use(
   })
 );
 
-// CSRF protection (state-changing requests) + load the logged-in user onto
-// res.locals for every view. Order matters: session → csrf (reads body) →
-// attachUser (reads session) → routes.
-app.use(csrf);
+// Load the logged-in user onto res.locals for every view, then run the
+// avatar-upload parser, then CSRF. Order matters:
+//   session → attachUser (reads session) → avatarUpload (needs req.user to name
+//   the file, and parses the multipart body so the _csrf field exists) → csrf
+//   (reads req.body for _csrf) → routes.
+// avatarUpload is scoped to /profile and is a no-op for GETs and non-multipart
+// requests, so mounting it before csrf only affects the profile photo upload.
 app.use(attachUser);
+app.use('/profile', avatarUpload);
+app.use(csrf);
+
+// Cold-start gate: a logged-in user who hasn't finished (or skipped) the
+// onboarding quiz is bounced to /onboarding. Runs after attachUser (needs
+// req.user) and carves out /onboarding, /api and /logout so the flow can
+// complete — see requireOnboarding in src/auth.js.
+app.use(requireOnboarding);
 
 app.use('/', authRoutes);
 app.use('/', apiRoutes);

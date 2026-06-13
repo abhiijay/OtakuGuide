@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Blossom branch avatar">
+  <rect width="200" height="200" fill="#FBFBF9"/>
+  <!-- Ink branch sweeping up from the lower-left, with one offshoot. -->
+  <g fill="none" stroke="#16120F" stroke-linecap="round">
+    <path d="M24 182 C 64 156 84 122 150 64" stroke-width="7"/>
+    <path d="M92 116 C 108 108 118 96 126 70" stroke-width="5"/>
+  </g>
+  <defs>
+    <path id="p4-petal" d="M0 0 C -11 -10 -12 -23 -5 -31 C -2 -34 0 -29 0 -29 C 0 -29 2 -34 5 -31 C 12 -23 11 -10 0 0 Z" fill="#E03C42"/>
+  </defs>
+  <!-- Blossom at the branch tip. -->
+  <g transform="translate(150 64) scale(0.8)">
+    <use href="#p4-petal" transform="rotate(0)"/>
+    <use href="#p4-petal" transform="rotate(72)"/>
+    <use href="#p4-petal" transform="rotate(144)"/>
+    <use href="#p4-petal" transform="rotate(216)"/>
+    <use href="#p4-petal" transform="rotate(288)"/>
+    <circle r="3.5" fill="#16120F"/>
+  </g>
+  <!-- A couple of drifting petals. -->
+  <use href="#p4-petal" transform="translate(112 130) rotate(28) scale(0.6)"/>
+  <use href="#p4-petal" transform="translate(74 150) rotate(-40) scale(0.5)"/>
+</svg>

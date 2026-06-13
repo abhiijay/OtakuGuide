@@ -1,0 +1,14 @@
+<%# Reusable avatar — a profile picture clipped into a rough brush circle
+    (.enso-mask), on brand with the enso logo. The image URL is resolved by
+    app.locals.avatarSrc (src/avatar.js): an upload, a chosen placeholder, or a
+    deterministic default. Include with:
+      include('partials/avatar', { person: user, cls: 'h-12 w-12' })
+    `person` is the user row to render; `cls` sizes it (default h-10 w-10). %>
+<% var _p = person; var _cls = typeof cls !== 'undefined' ? cls : 'h-10 w-10'; %>
+<%# avatarSrc is bound on app.locals in server.js. Guard it anyway: a missing
+    avatar must degrade to the first placeholder, never 500 the whole page. %>
+<% var _src = (typeof avatarSrc === 'function') ? avatarSrc(_p) : '/img/avatars/placeholder-1.svg'; %>
+<span class="enso-mask inline-block shrink-0 overflow-hidden bg-paper <%= _cls %>">
+  <img src="<%= _src %>" alt="<%= _p && _p.username ? _p.username : 'avatar' %>"
+    class="h-full w-full object-cover" />
+</span>

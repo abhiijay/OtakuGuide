@@ -48,12 +48,20 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_RE = /^[A-Za-z0-9_-]{3,20}$/;
 const PASSWORD_MIN = 8;
 
+// validateUsername(name) -> error string, or null when it's fine. Shared by
+// signup and profile editing so the one rule lives in a single place.
+function validateUsername(username) {
+  if (!username || !USERNAME_RE.test(username)) {
+    return 'Username must be 3–20 characters: letters, numbers, _ or -.';
+  }
+  return null;
+}
+
 function validateSignup({ email, username, password }) {
   const errors = [];
   if (!email || !EMAIL_RE.test(email)) errors.push('Enter a valid email address.');
-  if (!username || !USERNAME_RE.test(username)) {
-    errors.push('Username must be 3–20 characters: letters, numbers, _ or -.');
-  }
+  const nameErr = validateUsername(username);
+  if (nameErr) errors.push(nameErr);
   if (!password || password.length < PASSWORD_MIN) {
     errors.push(`Password must be at least ${PASSWORD_MIN} characters.`);
   }
@@ -118,6 +126,50 @@ function touchLastSeen(id) {
     new Date().toISOString(),
     id
   );
+}
+
+// completeOnboarding(id) — stamp onboarding_completed_at so the cold-start quiz
+// (views/onboarding.ejs) never shows again. Called once when the user finishes
+// OR skips the quiz: a skip leaves the taste vector empty, which the recommender
+// already treats as "use the popularity fallback" (see the schema comment on
+// users.onboarding_completed_at). The requireOnboarding gate only checks for
+// presence, not the value, so an idempotent overwrite is fine.
+function completeOnboarding(id) {
+  db.prepare(`UPDATE users SET onboarding_completed_at = ? WHERE id = ?`).run(
+    new Date().toISOString(),
+    id
+  );
+}
+
+// updateUsername(id, name) — profile edit. Validate with validateUsername first;
+// this throws { field, message } on a UNIQUE collision (same shape createUser
+// uses) so the route can show a field-specific message instead of a 500.
+function updateUsername(id, username) {
+  try {
+    db.prepare(`UPDATE users SET username = ? WHERE id = ?`).run(
+      String(username).trim(),
+      id
+    );
+  } catch (err) {
+    if (err && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      throw { field: 'username', message: 'That username is taken.' };
+    }
+    throw err;
+  }
+}
+
+// updateAvatar(id, value) — set users.avatar to a placeholder key or an upload
+// path. The caller is responsible for validating the value (see src/avatar.js).
+function updateAvatar(id, value) {
+  db.prepare(`UPDATE users SET avatar = ? WHERE id = ?`).run(value, id);
+}
+
+// findExternalAccount(userId, provider) — used by the profile page to show
+// whether an AniList account is linked. Returns the row or undefined.
+function findExternalAccount(userId, provider) {
+  return db
+    .prepare(`SELECT * FROM external_accounts WHERE user_id = ? AND provider = ?`)
+    .get(userId, provider);
 }
 
 // verifyLogin(email, password) -> { user } on success, or { error } describing
@@ -306,17 +358,46 @@ function requireAuth(req, res, next) {
   res.redirect('/login');
 }
 
+// requireOnboarding — runs on every request (mounted globally in server.js,
+// right after attachUser). A logged-in user who hasn't finished the cold-start
+// quiz is bounced to /onboarding until they pick favorites OR skip; both stamp
+// onboarding_completed_at via completeOnboarding(). req.user already carries
+// that column (attachUser loads the whole users row).
+//
+// Three carve-outs let the flow actually complete:
+//   - /onboarding   — the quiz page + its POST must be reachable
+//   - /api          — the quiz's "more like this" fetch (and any future JSON)
+//                     must return data, not an HTML redirect
+//   - /logout       — a parked user must still be able to sign out
+// And we only intercept GET navigations: a POST (e.g. the quiz submit itself)
+// is never redirected out from under the browser.
+function requireOnboarding(req, res, next) {
+  if (!req.user) return next();
+  if (req.user.onboarding_completed_at) return next();
+  const p = req.path;
+  if (p === '/logout' || p === '/onboarding' || p.startsWith('/api')) return next();
+  if (req.method !== 'GET') return next();
+  req.session.returnTo = req.originalUrl;
+  res.redirect('/onboarding');
+}
+
 module.exports = {
   hashPassword,
   verifyPassword,
   validateSignup,
+  validateUsername,
   createUser,
   findByEmail,
   findById,
   touchLastSeen,
+  completeOnboarding,
+  updateUsername,
+  updateAvatar,
+  findExternalAccount,
   verifyLogin,
   findOrCreateAnilistUser,
   attachUser,
   requireAuth,
+  requireOnboarding,
   csrf,
 };

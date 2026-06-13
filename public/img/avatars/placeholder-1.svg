@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Enso brush ring avatar">
+  <rect width="200" height="200" fill="#FBFBF9"/>
+  <!-- Single-stroke enso: a thick brush ring left open at one side. -->
+  <circle cx="100" cy="100" r="58" fill="none" stroke="#E03C42" stroke-width="15"
+    stroke-linecap="round" stroke-dasharray="300 64" transform="rotate(38 100 100)"/>
+  <circle cx="143" cy="138" r="5.5" fill="#16120F"/>
+</svg>

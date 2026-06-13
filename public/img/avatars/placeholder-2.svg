@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Sakura blossom avatar">
+  <rect width="200" height="200" fill="#FBFBF9"/>
+  <defs>
+    <!-- One cherry-blossom petal: base at centre (100,100), notched tip up. -->
+    <path id="p2-petal" d="M100 100 C 78 80 76 54 90 38 C 95 32 100 41 100 41 C 100 41 105 32 110 38 C 124 54 122 80 100 100 Z" fill="#E03C42"/>
+  </defs>
+  <g>
+    <use href="#p2-petal" transform="rotate(0 100 100)"/>
+    <use href="#p2-petal" transform="rotate(72 100 100)"/>
+    <use href="#p2-petal" transform="rotate(144 100 100)"/>
+    <use href="#p2-petal" transform="rotate(216 100 100)"/>
+    <use href="#p2-petal" transform="rotate(288 100 100)"/>
+  </g>
+  <!-- Ink stamen cluster. -->
+  <g stroke="#16120F" stroke-width="2.4" stroke-linecap="round">
+    <line x1="100" y1="100" x2="100" y2="80"/>
+    <line x1="100" y1="100" x2="119" y2="94"/>
+    <line x1="100" y1="100" x2="112" y2="116"/>
+    <line x1="100" y1="100" x2="88" y2="116"/>
+    <line x1="100" y1="100" x2="81" y2="94"/>
+  </g>
+  <circle cx="100" cy="100" r="5" fill="#16120F"/>
+</svg>

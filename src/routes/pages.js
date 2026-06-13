@@ -5,8 +5,13 @@
 
 const express = require('express');
 const { db } = require('../db');
-const { recommendFromAnime } = require('../recommender');
+const { recommendFromAnime, franchiseIds, titlesAreKin } = require('../recommender');
 const { SIGNALS } = require('../signals');
+const { requireAuth, findExternalAccount, completeOnboarding } = require('../auth');
+const { PLACEHOLDER_KEYS, placeholderPath } = require('../avatar');
+const { profileSummary } = require('../profile');
+const { largeCover } = require('../covers');
+const library = require('../library');
 // Canonical tag spellings for display ("sci fi" → "science fiction") —
 // same map the recommender applies at TF-IDF time.
 const TAG_ALIASES = require('../../db/tag-aliases.json');
@@ -64,16 +69,8 @@ const DAMPED =
   `(COALESCE(a.popularity, 0) * a.average_score + ${DAMP_M} * ${DAMP_C})` +
   ` / (COALESCE(a.popularity, 0) + ${DAMP_M})`;
 
-// MAL serves covers in multiple sizes; the catalog stores the default
-// (~225px wide). The 'l' variant (~425px) keeps large renders sharp.
-// Some entries lack the variant — img tags fall back via onerror.
-// AniList-hosted covers (rows from sync-recent) have no size-suffix trick;
-// transforming them would just guarantee a 404 round-trip, so pass them
-// through — those rows carry cover_image_xl anyway.
-function largeCover(url) {
-  if (!url || !url.includes('myanimelist')) return url;
-  return url.replace(/\.(jpe?g|png|webp)$/i, 'l.$1');
-}
+// largeCover (MAL size-swap for sharp posters) now lives in src/covers.js so
+// the JSON API can reuse it; imported above.
 
 const CATALOG_PAGE_SIZE = 48;
 const CATALOG_FORMATS = ['TV', 'MOVIE', 'OVA', 'ONA', 'SPECIAL'];
@@ -523,6 +520,87 @@ router.get('/anime/:id', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Onboarding — the cold-start quiz. A new user picks the anime they've loved;
+// each pick becomes a COMPLETED + favorite list entry, which the library layer
+// turns into the taste vector the personal recommender reads. The global
+// requireOnboarding gate (server.js) parks not-yet-onboarded users here; both
+// finishing and skipping stamp users.onboarding_completed_at so the gate lets
+// them through afterwards.
+// ---------------------------------------------------------------------------
+
+// How many posters the initial (no-JS) grid shows. The page grows beyond this
+// only with JS, via /api/similar expansion — so this is a real floor of choices
+// that works for everyone.
+const ONBOARDING_GRID_SIZE = 54;
+
+// onboardingSeeds() — the starting poster set: the most popular catalog titles,
+// franchise-deduped so one Naruto shows instead of Naruto + Shippuuden + Boruto.
+// We walk the popularity-sorted pool and keep a title only if it isn't already
+// claimed by a kept title's franchise (relations walk, signal #12's franchiseIds)
+// or a near-identical name (titlesAreKin — the backstop for the cross-id-less
+// twins that carry no relations). Over-dedup is harmless here: it just promotes
+// the next popular title. Cost: <=54 depth-3 relation walks, once per new user.
+function onboardingSeeds() {
+  const pool = db
+    .prepare(
+      `SELECT a.id, a.title_romaji, a.title_english, a.cover_image_url
+         FROM anime a
+        WHERE ${QUALITY}
+        ORDER BY COALESCE(a.popularity, 0) DESC
+        LIMIT 200`
+    )
+    .all();
+
+  const claimed = new Set();
+  const keptTitles = [];
+  const seeds = [];
+  for (const a of pool) {
+    if (seeds.length >= ONBOARDING_GRID_SIZE) break;
+    if (claimed.has(a.id)) continue;
+    const title = (a.title_english || a.title_romaji || '').toLowerCase();
+    if (!title) continue;
+    if (keptTitles.some((t) => titlesAreKin(title, t))) continue;
+    seeds.push({ ...a, cover_large: largeCover(a.cover_image_url) });
+    keptTitles.push(title);
+    for (const fid of franchiseIds(a.id)) claimed.add(fid);
+  }
+  return seeds;
+}
+
+router.get('/onboarding', requireAuth, (req, res) => {
+  // Already done — don't let someone re-run the quiz from a stale link.
+  if (req.user.onboarding_completed_at) return res.redirect('/');
+  res.render('onboarding', { active: '', seeds: onboardingSeeds() });
+});
+
+router.post('/onboarding', requireAuth, (req, res) => {
+  // Checkboxes named "pick": urlencoded gives a string for one, an array for
+  // many, undefined for none. Normalize to unique positive integer ids.
+  let picks = req.body.pick;
+  if (picks == null) picks = [];
+  else if (!Array.isArray(picks)) picks = [picks];
+  const ids = [
+    ...new Set(picks.map(Number).filter((n) => Number.isInteger(n) && n > 0)),
+  ];
+
+  // Each pick is a COMPLETED favorite — the strongest positive taste signal.
+  // upsertEntry recomputes the taste vector on every call (fine at quiz scale)
+  // and returns { error } for an id outside the catalog, which we just skip.
+  for (const id of ids) {
+    library.upsertEntry(req.user.id, id, { status: 'COMPLETED', is_favorite: true });
+  }
+
+  // Stamp completion whether they picked or skipped (zero ids) so the gate
+  // stops parking them here. Zero picks leaves the taste vector empty, which
+  // the recommender already handles as the popularity fallback.
+  completeOnboarding(req.user.id);
+
+  const dest = req.session.returnTo || '/';
+  delete req.session.returnTo;
+  res.redirect(dest);
+});
+
+// ---------------------------------------------------------------------------
 // How it works — the docs, as a small system of pages. The index holds the
 // brief + TLDR + chapter map; each chapter page explains one part of the
 // engine in depth (user direction 2026-06-12: not everything in one go).
@@ -561,6 +639,30 @@ router.get('/how-it-works/:slug', (req, res) => {
     prev: i > 0 ? DOC_CHAPTERS[i - 1] : null,
     next: i < DOC_CHAPTERS.length - 1 ? DOC_CHAPTERS[i + 1] : null,
     signals: SIGNALS,
+  });
+});
+
+// Profile — the account's own page (identity + edit). requireAuth bounces
+// signed-out visitors to /login. The edit form POSTs to /profile in auth.js,
+// which validates, mutates, and redirects back here (post-redirect-get); it
+// hands any error / success / repopulated values back via one-shot session
+// flash keys that we read and clear here.
+router.get('/profile', requireAuth, (req, res) => {
+  const flashErrors = req.session.profileErrors || [];
+  const flashValues = req.session.profileValues || {};
+  const saved = Boolean(req.session.profileSaved);
+  delete req.session.profileErrors;
+  delete req.session.profileValues;
+  delete req.session.profileSaved;
+
+  res.render('profile', {
+    active: 'profile',
+    anilist: findExternalAccount(req.user.id, 'anilist'),
+    placeholders: PLACEHOLDER_KEYS.map((key) => ({ key, src: placeholderPath(key) })),
+    summary: profileSummary(req.user.id),
+    errors: flashErrors,
+    values: flashValues,
+    saved,
   });
 });
 

@@ -29,11 +29,16 @@
       <span class="nav-tab nav-tab-soon hidden sm:inline" title="Coming soon">Library</span>
       <%# Account state. res.locals.user is set by attachUser on every request;
           csrfToken by the csrf middleware. Logged out → a log-in link; logged
-          in → the username + a POST-only logout (a link could be prefetched).
-          The full sakura account-corner UI lands with AniList OAuth. %>
+          in → the avatar + username linking to /profile, plus a POST-only logout
+          (a link could be prefetched). The /profile link is the conventional
+          path to the account; the sakura account-corner UI is the delightful
+          shortcut that lands on top of it. %>
       <span class="flex items-center gap-4 border-l border-ink/30 pl-6">
         <% if (typeof user !== 'undefined' && user) { %>
-        <span class="meta hidden text-ink/55 sm:inline" title="Signed in"><%= user.username %></span>
+        <a href="/profile" <%- act === 'profile' ? 'aria-current="page"' : '' %> class="nav-tab flex items-center gap-2" title="Your profile">
+          <%- include('avatar', { person: user, cls: 'h-7 w-7' }) %>
+          <span class="hidden sm:inline"><%= user.username %></span>
+        </a>
         <form method="post" action="/logout" class="inline">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <button type="submit" class="nav-tab">Log out</button>

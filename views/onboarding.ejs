@@ -1,0 +1,78 @@
+<%# Onboarding — the cold-start quiz. Receives from src/routes/pages.js:
+      seeds — [{ id, title_romaji, title_english, cover_image_url, cover_large }]
+              the franchise-deduped popular starting set.
+      res.locals.csrfToken — set by the csrf middleware.
+    Base layer is a no-JS peer-checkbox poster grid + a plain POST. JS
+    (public/js/onboarding.js) layers on the Spotify-style "more like this"
+    expansion, the live counter, and the smart submit label. %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head', { title: 'Get started' }) %>
+</head>
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <%- include('partials/frame') %>
+  <%- include('partials/nav') %>
+
+  <main class="relative mx-auto max-w-6xl overflow-hidden px-6 pb-40 pt-12">
+    <span class="pointer-events-none absolute -right-6 -top-12 select-none font-serif text-[13rem] font-extrabold leading-none text-ink/[0.04]" aria-hidden="true">選</span>
+
+    <header class="reveal relative max-w-2xl">
+      <h1>
+        <span class="relative inline-block font-serif text-4xl font-extrabold tracking-tight">
+          <span class="absolute -inset-x-4 -inset-y-1.5 -rotate-1 bg-sakura" aria-hidden="true"></span>
+          <span class="relative text-paper">赤い糸</span>
+        </span>
+        <span class="jp-sub mt-3">akai ito — the red thread begins with what you have loved</span>
+      </h1>
+      <p class="mt-6 max-w-xl text-sm leading-relaxed text-ink/75">
+        Pick the anime that have stayed with you. Each one teaches the recommender
+        your taste. Choose as many as you like — and once you pick one, more like
+        it will appear below. In a hurry? Skip for now and explore first.
+      </p>
+    </header>
+
+    <form method="post" action="/onboarding" id="onboard-form" class="mt-12">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+      <%# One continuous grid. With JS, picking a poster weaves more like it into
+          the SAME grid (see public/js/onboarding.js), so it grows into a single
+          never-ending list — the Spotify pattern. Without JS it's just the seed
+          set, still fully selectable. %>
+      <section aria-label="Anime to choose from">
+        <p class="meta mb-4 text-ink/55">人気 — start with the most loved</p>
+        <div id="seed-grid" class="grid grid-cols-3 gap-3 sm:grid-cols-4 sm:gap-4 md:grid-cols-5 lg:grid-cols-6">
+          <% seeds.forEach((a) => { var t = a.title_english || a.title_romaji; %>
+          <label class="onboard-card relative block cursor-pointer select-none" data-id="<%= a.id %>" data-title="<%= t %>">
+            <input type="checkbox" name="pick" value="<%= a.id %>" class="peer sr-only" />
+            <span aria-hidden="true" class="pointer-events-none absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-sakura font-serif text-xs font-bold text-paper opacity-0 transition-opacity duration-150 peer-checked:opacity-100">選</span>
+            <div class="cover-lift relative aspect-[2/3] overflow-hidden border border-ink/20 transition-shadow peer-checked:border-sakura peer-checked:ring-4 peer-checked:ring-sakura peer-focus-visible:ring-2 peer-focus-visible:ring-sakura">
+              <img src="<%= a.cover_large || a.cover_image_url %>" alt="<%= t %>" loading="lazy" decoding="async"
+                class="cover-img h-full w-full"
+                onerror="this.onerror=null;this.src='<%= a.cover_image_url %>'" />
+            </div>
+            <p class="mt-1.5 line-clamp-2 font-serif text-xs font-bold leading-snug text-ink peer-checked:text-sakura"><%= t %></p>
+          </label>
+          <% }) %>
+        </div>
+      </section>
+
+      <%# Sticky action bar — always visible so the choice is one tap away. %>
+      <div class="fixed inset-x-0 bottom-0 z-40 border-t border-ink/80 bg-paper/95 backdrop-blur-sm">
+        <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
+          <p class="meta text-ink/65">
+            <span data-count-wrap class="hidden"><span id="pick-count">0</span> chosen — </span>the more you choose, the stronger the thread
+          </p>
+          <button type="submit" id="finish-btn"
+            class="shrink-0 bg-ink px-6 py-3 font-mono text-xs uppercase tracking-[0.2em] text-paper transition-colors hover:bg-sakura">
+            finish setup
+          </button>
+        </div>
+      </div>
+    </form>
+  </main>
+
+  <%- include('partials/footer') %>
+  <script src="/js/onboarding.js" defer></script>
+</body>
+</html>

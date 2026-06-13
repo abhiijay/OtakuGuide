@@ -8,6 +8,8 @@ const crypto = require('crypto');
 const express = require('express');
 const auth = require('../auth');
 const anilist = require('../anilist');
+const { isValidPlaceholder } = require('../avatar');
+const { saveAvatarFile, removeUpload } = require('../uploads');
 
 const router = express.Router();
 
@@ -202,6 +204,57 @@ router.get('/auth/anilist/callback', async (req, res, next) => {
     console.error('AniList OAuth callback failed:', err);
     return renderCallbackError(res, 'Could not complete AniList sign-in. Please try again.', 502);
   }
+});
+
+// ---- Profile edit ----------------------------------------------------------
+// The /profile PAGE renders in pages.js (HTML surface); this is the matching
+// state change (same split as logout living here, not pages.js). The form is
+// multipart — server.js runs the avatar upload parser on /profile BEFORE csrf
+// so req.body._csrf and req.file are both available here. The edit is atomic:
+// any validation error saves nothing, discards a just-uploaded file, and
+// redirects back to /profile with the error (post-redirect-get via session
+// flash keys that pages.js reads and clears).
+router.post('/profile', auth.requireAuth, (req, res, next) => {
+  const username = (req.body.username || '').trim();
+  const chosenPlaceholder = req.body.placeholder || ''; // '' = no change
+  const errors = [];
+
+  if (req.uploadError) errors.push(req.uploadError); // set by the multer wrapper
+  const nameErr = auth.validateUsername(username);
+  if (nameErr) errors.push(nameErr);
+
+  // Bail with the form's state preserved. The upload is held in memory and only
+  // written on success, so a failed submit leaves nothing on disk to clean up.
+  const fail = (msgs) => {
+    req.session.profileErrors = msgs;
+    req.session.profileValues = { username };
+    res.redirect('/profile');
+  };
+
+  if (errors.length) return fail(errors);
+
+  try {
+    if (username !== req.user.username) auth.updateUsername(req.user.id, username);
+  } catch (err) {
+    if (err && err.field) return fail([err.message]); // username taken
+    return next(err);
+  }
+
+  // Avatar precedence: an uploaded photo wins; else a chosen placeholder; else
+  // leave it untouched. Replacing an old upload deletes the old file.
+  let nextAvatar = null;
+  if (req.file) nextAvatar = saveAvatarFile(req.user.id, req.file);
+  else if (chosenPlaceholder && isValidPlaceholder(chosenPlaceholder)) {
+    nextAvatar = chosenPlaceholder;
+  }
+  if (nextAvatar && nextAvatar !== req.user.avatar) {
+    const prev = req.user.avatar;
+    auth.updateAvatar(req.user.id, nextAvatar);
+    if (prev && prev.startsWith('/uploads/')) removeUpload(prev);
+  }
+
+  req.session.profileSaved = true;
+  res.redirect('/profile');
 });
 
 module.exports = router;

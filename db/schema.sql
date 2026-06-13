@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at               TEXT    NOT NULL,           -- ISO-8601 UTC; set once at signup
   last_seen_at             TEXT,                       -- updated on each login; NULL until first login after signup
   onboarding_completed_at  TEXT,                       -- cold-start quiz completion; NULL = recommender uses popularity fallback
+  avatar                   TEXT,                       -- profile picture: a placeholder key ("placeholder:2") or an upload path ("/uploads/avatars/.."); NULL = a deterministic default placeholder (see src/avatar.js)
   is_active                INTEGER NOT NULL DEFAULT 1  -- soft-delete flag (1 = active, 0 = disabled)
 );
 
