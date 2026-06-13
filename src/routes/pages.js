@@ -34,6 +34,36 @@ const QUALITY =
    AND a.average_score < 9.4
    AND (a.anilist_id IS NOT NULL OR a.mal_id IS NOT NULL)`;
 
+// Damped score — the Bayesian / IMDb weighted rating, used for ORDER BY on
+// every curated list. The MILGRAM incident (2026-06-12): "Milgram Dainishin"
+// (a 10-episode music-video SPECIAL, raw score 9.35 from a 2,143-strong
+// devoted fanbase, both synopses empty) outscored Frieren on raw average and
+// topped the home lists — nothing damped its tiny sample. The Bayesian mean
+// pulls a title's score toward the catalog mean C until its popularity
+// outweighs the damping mass m:   (pop*score + m*C) / (pop + m).
+//   pop = COALESCE(a.popularity, 0)  — AniList popularity / MAL members
+//                                       (mixed scales, fine for ranking)
+//   C   = mean score across the ranked catalog, computed once at load
+//   m   = damping mass. Titles with pop >> m keep their own score; titles
+//         with pop <= m collapse toward C. m=5000 sits below every legitimate
+//         top title (all pop > 100k → Frieren/FMA:B move < 0.04) and above the
+//         noise band (MILGRAM's 2,143 votes → 9.35 damps to 7.13, decisively
+//         out of any top-8).
+// Damping does NOT replace the >= 9.4 / unfinished demotions in QUALITY and
+// the catalog score sort: a hyped unreleased title can carry high popularity,
+// which damping alone won't sink — the two guards are complementary.
+const DAMP_M = 5000;
+let DAMP_C = 6.18; // fallback if the load-time mean query can't run
+try {
+  const row = db.prepare(`SELECT AVG(average_score) AS c FROM anime a WHERE ${QUALITY}`).get();
+  if (row && row.c) DAMP_C = row.c;
+} catch (err) {
+  console.error('damped-rank: catalog-mean query failed, using fallback C —', err.message);
+}
+const DAMPED =
+  `(COALESCE(a.popularity, 0) * a.average_score + ${DAMP_M} * ${DAMP_C})` +
+  ` / (COALESCE(a.popularity, 0) + ${DAMP_M})`;
+
 // MAL serves covers in multiple sizes; the catalog stores the default
 // (~225px wide). The 'l' variant (~425px) keeps large renders sharp.
 // Some entries lack the variant — img tags fall back via onerror.
@@ -96,7 +126,7 @@ function drawFocusShelf() {
        FROM anime a
        JOIN anime_tags at ON at.anime_id = a.id
        WHERE at.tag_id = ? AND ${QUALITY}
-       ORDER BY a.average_score DESC, a.id
+       ORDER BY ${DAMPED} DESC, a.id
        LIMIT 1`
     )
     .get(focusTag.id);
@@ -131,7 +161,7 @@ router.get('/', (req, res) => {
          WHERE ${QUALITY}
            AND format IN ('TV', 'MOVIE')
            AND episodes >= 1
-         ORDER BY average_score DESC
+         ORDER BY ${DAMPED} DESC
          LIMIT 8`
       )
       .all();
@@ -188,7 +218,7 @@ router.get('/', (req, res) => {
                     format, episodes, substr(synopsis_mal, 1, 180) AS synopsis_snip
              FROM anime a
              WHERE ${QUALITY} AND format = 'MOVIE'
-             ORDER BY average_score DESC
+             ORDER BY ${DAMPED} DESC
              LIMIT 24`
           )
           .all(),
@@ -204,7 +234,7 @@ router.get('/', (req, res) => {
              WHERE ${QUALITY}
                AND season_year BETWEEN 1990 AND 1999
                AND format IN ('TV', 'MOVIE')
-             ORDER BY average_score DESC
+             ORDER BY ${DAMPED} DESC
              LIMIT 24`
           )
           .all(),
@@ -220,7 +250,7 @@ router.get('/', (req, res) => {
              JOIN anime_tags at ON at.anime_id = a.id
              JOIN tags t ON t.id = at.tag_id
              WHERE t.name = 'time travel' AND ${QUALITY}
-             ORDER BY a.average_score DESC
+             ORDER BY ${DAMPED} DESC
              LIMIT 24`
           )
           .all(),
@@ -340,7 +370,7 @@ router.get('/catalog', (req, res) => {
   // finished titles instead of hiding them — browsing shows everything,
   // ranking stays honest.
   const ORDER = {
-    score: `a.average_score IS NULL, (a.status IS NOT 'FINISHED'), (a.average_score >= 9.4), a.average_score DESC`,
+    score: `a.average_score IS NULL, (a.status IS NOT 'FINISHED'), (a.average_score >= 9.4), ${DAMPED} DESC`,
     year: 'a.season_year IS NULL, a.season_year DESC, a.average_score DESC',
     title: 'a.title_romaji COLLATE NOCASE ASC',
   }[sort];
